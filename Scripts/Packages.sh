@@ -54,6 +54,11 @@ REMOVE_PACKAGE() {
 	done
 }
 
+GET_LATEST_PRERELEASE_TAG() {
+	local API_URL=$1
+	curl -sL "$API_URL" | jq -r 'if type == "array" then map(select(.prerelease == true)) | first | .tag_name else if .prerelease == true then .tag_name else empty end end'
+}
+
 # 调用示例
 # UPDATE_PACKAGE "OpenAppFilter" "destan19/OpenAppFilter" "master" "" "custom_name1 custom_name2"
 # UPDATE_PACKAGE "open-app-filter" "destan19/OpenAppFilter" "master" "" "luci-app-appfilter oaf" 这样会把原有的open-app-filter，luci-app-appfilter，oaf相关组件删除，不会出现coremark错误。
@@ -136,7 +141,12 @@ UPDATE_VERSION_BY_API() {
 
 	echo -e "\n$PKG_NAME custom version update has started!"
 
-	local PKG_TAG=$(curl -sL "$API_URL" | jq -r 'if type == "array" then .[0].tag_name else .tag_name end')
+	local PKG_TAG
+	if [ "$MODE" = "prerelease" ]; then
+		PKG_TAG=$(GET_LATEST_PRERELEASE_TAG "$API_URL")
+	else
+		PKG_TAG=$(curl -sL "$API_URL" | jq -r 'if type == "array" then .[0].tag_name else .tag_name end')
+	fi
 	if [ -z "$PKG_TAG" ] || [ "$PKG_TAG" = "null" ]; then
 		echo "$PKG_NAME failed to fetch release tag from API!"
 		return
@@ -166,7 +176,7 @@ UPDATE_VERSION_BY_API() {
 
 #UPDATE_VERSION "软件包名" "测试版，true，可选，默认为否"
 #UPDATE_VERSION "tailscale"
-UPDATE_VERSION_BY_API "sing-box" "https://api.github.com/repos/reF1nd/sing-box-releases/releases/latest" "https://github.com/reF1nd/sing-box-releases/releases/download/v\$(PKG_VERSION)/sing-box-\$(PKG_VERSION)-linux-arm64-musl.tar.gz"
+UPDATE_VERSION_BY_API "sing-box" "https://api.github.com/repos/reF1nd/sing-box-releases/releases" "https://github.com/reF1nd/sing-box-releases/releases/download/v\$(PKG_VERSION)/sing-box-\$(PKG_VERSION)-linux-arm64-musl.tar.gz" "prerelease"
 UPDATE_VERSION_BY_API "easytier" "https://api.github.com/repos/EasyTier/EasyTier/releases" "https://github.com/EasyTier/EasyTier/releases/download/v\$(PKG_VERSION)/easytier-linux-aarch64-v\$(PKG_VERSION).zip"
 
 #删除官方的默认插件
