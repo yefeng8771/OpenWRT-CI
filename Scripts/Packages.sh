@@ -182,9 +182,9 @@ UPDATE_VERSION_BY_API() {
 #UPDATE_VERSION "tailscale"
 UPDATE_VERSION_BY_API "easytier" "https://api.github.com/repos/EasyTier/EasyTier/releases" "https://github.com/EasyTier/EasyTier/releases/download/v\$(PKG_VERSION)/easytier-linux-aarch64-v\$(PKG_VERSION).zip" "prerelease"
 
-if [ -f ./momo/Makefile ]; then
-	sed -i 's/ +sing-box//g' ./momo/Makefile
-	cat ./momo/Makefile
+if [ -f ./OpenWrt-momo/momo/Makefile ]; then
+	sed -i 's/ +sing-box//g' ./OpenWrt-momo/momo/Makefile
+	cat ./OpenWrt-momo/momo/Makefile
 fi
 
 #删除官方的默认插件
@@ -207,6 +207,7 @@ REMOVE_PACKAGE \
 	"gecoosac"
 
 cp -r $GITHUB_WORKSPACE/package/* ./
+rm -rf ./sing-box
 #修复daed/Makefile
 rm -rf luci-app-daed/daed/Makefile && cp -r $GITHUB_WORKSPACE/patches/daed/Makefile luci-app-daed/daed/
 cat luci-app-daed/daed/Makefile
