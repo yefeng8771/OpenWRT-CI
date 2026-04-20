@@ -182,6 +182,11 @@ UPDATE_VERSION_BY_API() {
 #UPDATE_VERSION "tailscale"
 UPDATE_VERSION_BY_API "easytier" "https://api.github.com/repos/EasyTier/EasyTier/releases" "https://github.com/EasyTier/EasyTier/releases/download/v\$(PKG_VERSION)/easytier-linux-aarch64-v\$(PKG_VERSION).zip" "prerelease"
 
+if [ -f ./momo/Makefile ]; then
+	sed -i 's/ +sing-box//g' ./momo/Makefile
+	cat ./momo/Makefile
+fi
+
 #删除官方的默认插件
 rm -rf ../feeds/luci/applications/luci-app-{passwall*,mosdns,dockerman,dae*,bypass*}
 rm -rf ../feeds/packages/net/{v2ray-geodata,dae*}
