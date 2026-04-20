@@ -154,9 +154,10 @@ UPDATE_VERSION_BY_API() {
 	for PKG_FILE in $PKG_FILES; do
 		local OLD_VER=$(grep -Po "PKG_VERSION:=\K.*" "$PKG_FILE")
 		local OLD_HASH=$(grep -Po "PKG_HASH:=\K.*" "$PKG_FILE")
-		local NEW_VER=$(echo "$PKG_TAG" | sed 's/^v//')
+		local NEW_SOURCE_VER=$(echo "$PKG_TAG" | sed 's/^v//')
+		local NEW_VER=$(printf '%s' "$NEW_SOURCE_VER" | tr 'A-Z' 'a-z')
 		local NEW_URL=$(printf '%s' "$ASSET_TEMPLATE" | \
-			sed "s#\$(PKG_VERSION)#$NEW_VER#g; s#\$(PKG_TAG)#$PKG_TAG#g; s#\$(PKG_NAME)#$PKG_NAME#g")
+			sed "s#\$(PKG_VERSION)#$NEW_VER#g; s#\$(PKG_SOURCE_VERSION)#$NEW_SOURCE_VER#g; s#\$(PKG_TAG)#$PKG_TAG#g; s#\$(PKG_NAME)#$PKG_NAME#g")
 		local NEW_HASH=$(curl -sL "$NEW_URL" | sha256sum | cut -d ' ' -f 1)
 
 		echo "old version: $OLD_VER $OLD_HASH"
@@ -165,6 +166,9 @@ UPDATE_VERSION_BY_API() {
 
 		if [ "$MODE" = "force" ] || [ "$OLD_VER" != "$NEW_VER" ]; then
 			sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$NEW_VER/g" "$PKG_FILE"
+			if grep -q '^PKG_SOURCE_VERSION:=' "$PKG_FILE"; then
+				sed -i "s/PKG_SOURCE_VERSION:=.*/PKG_SOURCE_VERSION:=$NEW_SOURCE_VER/g" "$PKG_FILE"
+			fi
 			sed -i "s/PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/g" "$PKG_FILE"
 			echo "$PKG_FILE version has been updated!"
 		else
@@ -175,7 +179,7 @@ UPDATE_VERSION_BY_API() {
 
 #UPDATE_VERSION "软件包名" "测试版，true，可选，默认为否"
 #UPDATE_VERSION "tailscale"
-UPDATE_VERSION_BY_API "sing-box" "https://api.github.com/repos/reF1nd/sing-box-releases/releases" "https://github.com/reF1nd/sing-box-releases/releases/download/v\$(PKG_VERSION)/sing-box-\$(PKG_VERSION)-linux-arm64-musl.tar.gz" "prerelease"
+UPDATE_VERSION_BY_API "sing-box" "https://api.github.com/repos/reF1nd/sing-box-releases/releases" "https://github.com/reF1nd/sing-box-releases/releases/download/v\$(PKG_SOURCE_VERSION)/sing-box-\$(PKG_SOURCE_VERSION)-linux-arm64-musl.tar.gz" "prerelease"
 UPDATE_VERSION_BY_API "easytier" "https://api.github.com/repos/EasyTier/EasyTier/releases" "https://github.com/EasyTier/EasyTier/releases/download/v\$(PKG_VERSION)/easytier-linux-aarch64-v\$(PKG_VERSION).zip" "prerelease"
 
 #删除官方的默认插件

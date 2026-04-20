@@ -1,11 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=sing-box
-PKG_VERSION:=1.13.8-reF1nd
+PKG_VERSION:=1.13.8-ref1nd
 PKG_RELEASE:=1
+PKG_SOURCE_VERSION:=1.13.8-reF1nd
 
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-linux-arm64-musl.tar.gz
-PKG_SOURCE_URL:=https://github.com/reF1nd/sing-box-releases/releases/download/v$(PKG_VERSION)/
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_SOURCE_VERSION)-linux-arm64-musl.tar.gz
+PKG_SOURCE_URL:=https://github.com/reF1nd/sing-box-releases/releases/download/v$(PKG_SOURCE_VERSION)/
 PKG_HASH:=skip
 
 PKG_LICENSE:=GPL-3.0-only
