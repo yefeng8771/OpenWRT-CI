@@ -183,6 +183,7 @@ rm -rf ../feeds/luci/applications/luci-app-{passwall*,mosdns,dockerman,dae*,bypa
 rm -rf ../feeds/packages/net/{v2ray-geodata,dae*}
 
 REMOVE_PACKAGE \
+	"sing-box" \
 	"openclash" \
 	"homeproxy" \
 	"nikki" \
