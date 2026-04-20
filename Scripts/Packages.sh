@@ -70,6 +70,7 @@ UPDATE_PACKAGE "aurora-config" "eamonxg/luci-app-aurora-config" "master"
 UPDATE_PACKAGE "kucat" "sirpdboy/luci-theme-kucat" "master"
 UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
 
+UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
 UPDATE_PACKAGE "diskman" "lisaac/luci-app-diskman" "master"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"
@@ -179,7 +180,6 @@ UPDATE_VERSION_BY_API() {
 
 #UPDATE_VERSION "软件包名" "测试版，true，可选，默认为否"
 #UPDATE_VERSION "tailscale"
-UPDATE_VERSION_BY_API "sing-box" "https://api.github.com/repos/reF1nd/sing-box-releases/releases" "https://github.com/reF1nd/sing-box-releases/releases/download/v\$(PKG_SOURCE_VERSION)/sing-box-\$(PKG_SOURCE_VERSION)-linux-arm64-musl.tar.gz" "prerelease"
 UPDATE_VERSION_BY_API "easytier" "https://api.github.com/repos/EasyTier/EasyTier/releases" "https://github.com/EasyTier/EasyTier/releases/download/v\$(PKG_VERSION)/easytier-linux-aarch64-v\$(PKG_VERSION).zip" "prerelease"
 
 #删除官方的默认插件

@@ -1,5 +1,28 @@
 #!/bin/bash
 . $(dirname "$(realpath "$0")")/function.sh
+
+install_sing_box_binary() {
+	local api_url="https://api.github.com/repos/reF1nd/sing-box-releases/releases"
+	local tag_name=$(curl -fsSL "$api_url" | jq -r 'map(select(.prerelease == true)) | first | .tag_name')
+	if [ -z "$tag_name" ] || [ "$tag_name" = "null" ]; then
+		echo "failed to resolve sing-box prerelease tag" >&2
+		return 1
+	fi
+
+	local source_ver=${tag_name#v}
+	local download_url="https://github.com/reF1nd/sing-box-releases/releases/download/${tag_name}/sing-box-${source_ver}-linux-arm64-musl.tar.gz"
+	local tmpdir=$(mktemp -d)
+
+	echo "install sing-box from: $download_url"
+	curl -fL "$download_url" -o "$tmpdir/sing-box.tar.gz"
+	tar -xzf "$tmpdir/sing-box.tar.gz" -C "$tmpdir" --strip-components=1
+	install -d -m0755 ./files/usr/bin
+	install -m0755 "$tmpdir/sing-box" ./files/usr/bin/sing-box
+	rm -rf "$tmpdir"
+}
+
+install_sing_box_binary
+
 #移除luci-app-attendedsysupgrade
 sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile")
 #修改默认主题
