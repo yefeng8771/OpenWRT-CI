@@ -29,8 +29,13 @@ define Package/easytier/description
 endef
 
 define Build/Prepare
+	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	unzip -q $(DL_DIR)/$(PKG_SOURCE) -d $(PKG_BUILD_DIR)
+	if [ -d $(PKG_BUILD_DIR)/easytier-linux-aarch64 ]; then \
+		mv $(PKG_BUILD_DIR)/easytier-linux-aarch64/* $(PKG_BUILD_DIR)/; \
+		rmdir $(PKG_BUILD_DIR)/easytier-linux-aarch64; \
+	fi
 endef
 
 define Build/Compile
