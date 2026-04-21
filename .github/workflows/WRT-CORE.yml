@@ -255,6 +255,7 @@ jobs:
           retention-days: 2
 
       - name: Upload Packages To Release
+        continue-on-error: true
         uses: softprops/action-gh-release@master
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
