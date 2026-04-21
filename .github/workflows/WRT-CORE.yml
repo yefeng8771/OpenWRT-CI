@@ -195,7 +195,7 @@ jobs:
           
           chmod +x $GITHUB_WORKSPACE/Scripts/Settings.sh
           $GITHUB_WORKSPACE/Scripts/Settings.sh
-          ./.config
+          source ./.config
           make defconfig
 
           echo "WRT_FILES=$WRT_FILES" >> $GITHUB_ENV
