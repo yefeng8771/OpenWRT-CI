@@ -51,20 +51,11 @@ UPDATE_PACKAGE "aurora-config" "eamonxg/luci-app-aurora-config" "master"
 UPDATE_PACKAGE "kucat" "sirpdboy/luci-theme-kucat" "master"
 UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
 
-UPDATE_PACKAGE "homeproxy" "VIKINGYFY/homeproxy" "main"
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
-UPDATE_PACKAGE "nikki" "nikkinikki-org/OpenWrt-nikki" "main"
-UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "dev" "pkg"
-UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
-UPDATE_PACKAGE "passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
-
-UPDATE_PACKAGE "luci-app-tailscale" "asvow/luci-app-tailscale" "main"
-
-UPDATE_PACKAGE "ddns-go" "sirpdboy/luci-app-ddns-go" "main"
-UPDATE_PACKAGE "diskman" "lisaac/luci-app-diskman" "master"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
+
+UPDATE_PACKAGE "diskman" "lisaac/luci-app-diskman" "master"
 UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"
-UPDATE_PACKAGE "gecoosac" "openwrt-fork/openwrt-gecoosac" "main"
 UPDATE_PACKAGE "mosdns" "sbwml/luci-app-mosdns" "v5" "" "v2dat"
 #UPDATE_PACKAGE "netspeedtest" "sirpdboy/luci-app-netspeedtest" "master" "" "homebox speedtest"
 UPDATE_PACKAGE "openlist2" "sbwml/luci-app-openlist2" "main"
@@ -73,12 +64,12 @@ UPDATE_PACKAGE "qbittorrent" "sbwml/luci-app-qbittorrent" "master" "" "qt6base q
 UPDATE_PACKAGE "qmodem" "FUjr/QModem" "main"
 UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main"
 UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "luci-app-timewol luci-app-wolplus"
-UPDATE_PACKAGE "vnt" "lmq8267/luci-app-vnt" "main"
-
 
 UPDATE_PACKAGE "luci-app-daed" "QiuSimons/luci-app-daed" "master"
 UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
-UPDATE_PACKAGE "luci-app-lucky" "sirpdboy/luci-app-lucky" "main"
+UPDATE_PACKAGE "luci-app-tinyfilemanager" "muink/luci-app-tinyfilemanager" "master"
+UPDATE_PACKAGE "luci-app-natmapt" "muink/luci-app-natmapt" "master"
+
 #更新软件包版本
 UPDATE_VERSION() {
 	local PKG_NAME=$1
@@ -133,6 +124,31 @@ cp -r $GITHUB_WORKSPACE/package/* ./
 #修复daed/Makefile
 rm -rf luci-app-daed/daed/Makefile && cp -r $GITHUB_WORKSPACE/patches/daed/Makefile luci-app-daed/daed/
 cat luci-app-daed/daed/Makefile
+
+#更新 easytier 到 EasyTier/EasyTier 最新 prerelease
+if [ -f "./luci-app-easytier/version.mk" ]; then
+	ET_TAG=$(curl -sL "https://api.github.com/repos/EasyTier/EasyTier/releases" | jq -r 'map(select(.prerelease == true)) | first | .tag_name')
+	if [ -n "$ET_TAG" ]; then
+		ET_VER=$(echo $ET_TAG | sed 's/^v//')
+		sed -i "s/EASYTIER_VERSION=.*/EASYTIER_VERSION=$ET_VER/g" ./luci-app-easytier/version.mk
+		echo "easytier version updated to $ET_VER"
+	fi
+fi
+
+#更新 sing-box 到 reF1nd/sing-box 最新 prerelease tag
+SB_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/sing-box/Makefile")
+if [ -f "$SB_FILE" ]; then
+	SB_TAG=$(curl -sL "https://api.github.com/repos/reF1nd/sing-box/tags" | jq -r 'map(select(.name | contains("reF1nd"))) | first | .name')
+	if [ -n "$SB_TAG" ]; then
+		SB_VER=$(echo $SB_TAG | sed 's/^v//')
+		sed -i "s|PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://codeload.github.com/reF1nd/sing-box/tar.gz/v\$(PKG_VERSION)?|" "$SB_FILE"
+		sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$SB_VER/g" "$SB_FILE"
+		SB_HASH=$(curl -sL "https://codeload.github.com/reF1nd/sing-box/tar.gz/v${SB_VER}?" | sha256sum | cut -d ' ' -f 1)
+		sed -i "s/PKG_HASH:=.*/PKG_HASH:=$SB_HASH/g" "$SB_FILE"
+		echo "sing-box version updated to $SB_VER"
+	fi
+fi
+
 #修复libubox报错
 #sed -i '/include $(INCLUDE_DIR)\/cmake.mk/a PKG_BUILD_FLAGS:=no-werror' ../package/libs/libubox/Makefile
 #sed -i 's|TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include|& -Wno-error=format-nonliteral -Wno-format-nonliteral|' ../package/libs/libubox/Makefile

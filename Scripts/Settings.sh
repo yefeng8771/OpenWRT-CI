@@ -17,8 +17,8 @@ if [ -f "$WIFI_SH" ]; then
 	#修改WIFI密码
 	sed -i "s/BASE_WORD='.*'/BASE_WORD='$WRT_WORD'/g" $WIFI_SH
 elif [ -f "$WIFI_UC" ]; then
-	#修改WIFI名称
-	sed -i "s/ssid='.*'/ssid='$WRT_SSID'/g" $WIFI_UC
+	#修改WIFI默认名称，根据频段设置不同SSID
+	sed -i 's/"ImmortalWRT"/(band_name == "2g" ? "QWRT4" : band_name == "5g" ? "QWRT5" : "QWRT6")/g' $WIFI_UC
 	#修改WIFI密码
 	sed -i "s/key='.*'/key='$WRT_WORD'/g" $WIFI_UC
 	#修改WIFI地区
