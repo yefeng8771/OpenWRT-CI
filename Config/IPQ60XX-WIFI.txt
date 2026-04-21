@@ -5,13 +5,13 @@ CONFIG_TARGET_MULTI_PROFILE=n
 # CONFIG_TARGET_PER_DEVICE_ROOTFS is not set
 #设备列表
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_cmiot_ax18 is not set
-# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-ax1800 is not set
-# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-axt1800 is not set
-# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=y
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl_ax1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl_axt1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re_ss_01 is not set
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re_cs_02=y
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_linksys_mr7350 is not set
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_qihoo_360v6 is not set
-# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5-jdcloud is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5_jdcloud is not set
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5 is not set
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_xiaomi_ax1800 is not set
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2 is not set
