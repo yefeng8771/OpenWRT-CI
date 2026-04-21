@@ -1,67 +1,70 @@
 #!/bin/bash
-. $(dirname "$(realpath "$0")")/function.sh
 
+#安装和更新软件包
 UPDATE_PACKAGE() {
 	local PKG_NAME=$1
-	local REPO_URL=$2
-	local BRANCH_NAME=$3
-	local LOCAL_NAME=$4
-	local PKG_SUBNAME=$5
-	local PKG_URL="https://github.com/$REPO_URL"
-	local REPO_NAME=$(echo $REPO_URL | awk -F '/' '{print $(NF)}')
-	local TMP_DIR=$(mktemp -d)
-	local PKG_LIST=$(echo $PKG_SUBNAME | tr ' ' '\n')
+	local PKG_REPO=$2
+	local PKG_BRANCH=$3
+	local PKG_SPECIAL=$4
+	local PKG_LIST=("$PKG_NAME" $5)
+	local REPO_NAME=${PKG_REPO#*/}
+	local ORIG_DIR=$(pwd)
 
-	if [[ ! $PKG_URL =~ ^https://github.com/ ]]; then
-		echo "Unsupported URL: $PKG_URL"
-		return 1
-	fi
+	echo " "
 
-	echo -e "\nDownloading package [$PKG_NAME] from [$PKG_URL] branch [$BRANCH_NAME]"
-	git clone --depth 1 -b $BRANCH_NAME $PKG_URL $TMP_DIR/$REPO_NAME
-	if [ $? -ne 0 ]; then
-		echo "Failed to clone repository: $PKG_URL"
-		rm -rf $TMP_DIR
-		return 1
-	fi
+	for NAME in "${PKG_LIST[@]}"; do
+		echo "Search directory: $NAME"
+		local FOUND_DIRS=$(find ../feeds/luci/ ../feeds/packages/ -maxdepth 3 -type d -iname "*$NAME*" 2>/dev/null)
 
-	cd $TMP_DIR/$REPO_NAME || return 1
-
-	for DIR in $(find . -maxdepth 3 -type d); do
-		if [ -f "$DIR/Makefile" ] && grep -q "$(PKG_NAME)" "$DIR/Makefile"; then
-			if [ -n "$LOCAL_NAME" ]; then
-				mv "$DIR" "./$LOCAL_NAME"
-				DIR="./$LOCAL_NAME"
-			fi
-			cp -rf "$DIR" "$GITHUB_WORKSPACE/$WRT_DIR/package/"
-			echo "Package [$PKG_NAME] copied from [$DIR]"
-			break
+		if [ -n "$FOUND_DIRS" ]; then
+			while read -r DIR; do
+				rm -rf "$DIR"
+				echo "Delete directory: $DIR"
+			done <<< "$FOUND_DIRS"
+		else
+			echo "Not fonud directory: $NAME"
 		fi
 	done
 
-	if [ -n "$PKG_SUBNAME" ]; then
-		for NAME in $PKG_LIST; do
-			find . -maxdepth 3 -type d -iname "*$NAME*" -exec cp -rf {} "$GITHUB_WORKSPACE/$WRT_DIR/package/" \;
-		done
+	cd "$ORIG_DIR" || return 1
+	if ! git clone --depth=1 --single-branch --branch "$PKG_BRANCH" "https://github.com/$PKG_REPO.git" "$REPO_NAME"; then
+		cd "$ORIG_DIR" || true
+		return 1
 	fi
 
-	rm -rf $TMP_DIR
+	if [[ "$PKG_SPECIAL" == "pkg" ]]; then
+		find "./$REPO_NAME"/*/ -maxdepth 3 -type d -iname "*$PKG_NAME*" -prune -exec cp -rf {} ./ \;
+		rm -rf "./$REPO_NAME/"
+	elif [[ "$PKG_SPECIAL" == "name" ]]; then
+		mv -f "$REPO_NAME" "$PKG_NAME"
+	fi
+
+	cd "$ORIG_DIR" || return 1
 }
 
 REMOVE_PACKAGE() {
-	for PKG_NAME in "$@"; do
-		find ./ ../feeds/packages/ ../feeds/luci/ -maxdepth 3 -type d -iname "*$PKG_NAME*" | while read -r PKG_DIR; do
-			rm -rf "$PKG_DIR"
+	local PKG_LIST=("$@")
+
+	for NAME in "${PKG_LIST[@]}"; do
+		echo " "
+		echo "Remove package: $NAME"
+
+		find ./ ../feeds/luci/ ../feeds/packages/ -maxdepth 4 \( -type d -o -type f \) -iname "*$NAME*" -print0 2>/dev/null | while IFS= read -r -d '' ITEM; do
+			rm -rf "$ITEM"
+			echo "Deleted: $ITEM"
 		done
-		find ./ ../feeds/packages/ ../feeds/luci/ -maxdepth 3 -type f -iname "*$PKG_NAME*.mk" | while read -r PKG_FILE; do
-			rm -rf "$PKG_FILE"
-		done
-		echo "Package [$PKG_NAME] removed"
 	done
 }
 
+GET_LATEST_PRERELEASE_TAG() {
+	local API_URL=$1
+	curl -sL "$API_URL" | jq -r 'if type == "array" then map(select(.prerelease == true)) | first | .tag_name else if .prerelease == true then .tag_name else empty end end'
+}
+
+# 调用示例
 # UPDATE_PACKAGE "OpenAppFilter" "destan19/OpenAppFilter" "master" "" "custom_name1 custom_name2"
 # UPDATE_PACKAGE "open-app-filter" "destan19/OpenAppFilter" "master" "" "luci-app-appfilter oaf" 这样会把原有的open-app-filter，luci-app-appfilter，oaf相关组件删除，不会出现coremark错误。
+
 # UPDATE_PACKAGE "包名" "项目地址" "项目分支" "pkg/name，可选，pkg为从大杂烩中单独提取包名插件；name为重命名为包名"
 UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
 UPDATE_PACKAGE "aurora" "eamonxg/luci-theme-aurora" "master"

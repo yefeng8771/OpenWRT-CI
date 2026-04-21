@@ -177,97 +177,133 @@ jobs:
           . $GITHUB_WORKSPACE/Scripts/function.sh
           cd ./wrt/
           
-          generate_config && cat .config
-          
-          $GITHUB_WORKSPACE/Scripts/Settings.sh
+          generate_config
 
-          make defconfig -j$(nproc) && make clean -j$(nproc)
+          echo "WRT_FILES=$WRT_FILES" >> $GITHUB_ENV
 
-      - name: Download Packages
-        if: env.WRT_TEST != 'true'
-        run: |
-          cd ./wrt/
-
-          make download -j$(nproc)
-
-      - name: Compile Firmware
-        if: env.WRT_TEST != 'true'
-        run: |
-          cd ./wrt/
-
-          make -j$(nproc) || make -j1 V=s
-
-      - name: Delete Old Cache
-        run: |
-          # 获取缓存列表并删除
-          gh cache list --key ${{ env.WRT_ARCH }}-${{ hashFiles('**/repo_flag') }}- --json key --jq '.[] | .key' | while read -r key; do
-            gh cache delete "$key"
-          done
-          # 输出缓存状态
-          echo "========cache status========"
-          echo "ccache: $(du -sh ./wrt/.ccache | cut -f 1)"
-          echo "staging: $(du -sh ./wrt/staging_dir | cut -f 1)"
-
-      - name: Machine Information
-        run: |
-          cd ./wrt/
-
-          echo "======================="
-          lscpu | grep -E "name|Core|Thread"
-          echo "======================="
-          df -h
-          echo "======================="
-          du -h --max-depth=1
-          echo "======================="
-
-      - name: Package Firmware
-        run: |
-          cd ./wrt/ && mkdir ./upload/
-
-          cp -f ./.config ./upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
-
-          if [[ $WRT_TEST != 'true' ]]; then
-            echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV
-            echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> $GITHUB_ENV
-
-            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
-
-            for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
-              EXT=$(basename $FILE | cut -d '.' -f 2-)
-              NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
-              NEW_FILE="$WRT_INFO"-"$WRT_BRANCH"-"$NAME"-"$WRT_DATE"."$EXT"
-              mv -f $FILE ./upload/$NEW_FILE
+          [ -f "$WRT_FILES" ] && cp -Rf $WRT_FILES files
+          [ -f "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" ] && cat "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" > .config
+          [ -n "$WRT_PACKAGE" ] && { 
+            echo "$WRT_PACKAGE" | tr ',' '\n' | while read -r package; do 
+              sed -i "/$package/d" .config
+              echo -e "CONFIG_PACKAGE_$package=y" >> .config
             done
+          }
+          
+          echo "CONFIG_TARGET_OPTIONS=y" >> .config
+          grep -v '^#' .config | grep -v '^$'
+          
+          chmod +x $GITHUB_WORKSPACE/Scripts/Settings.sh
+          $GITHUB_WORKSPACE/Scripts/Settings.sh
+          ./.config
+          make defconfig
 
-            find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
-
-            make clean -j$(nproc)
+          echo "WRT_FILES=$WRT_FILES" >> $GITHUB_ENV
+          
+          if [ -f ./package/kernel/linux/files/Makefile ]; then
+            export WRT_KVER=$(grep -oP '^KERNEL_PATCHVER:=\K[\d.]+' ./package/kernel/linux/files/Makefile | head -n 1)
+          else
+            export WRT_KVER=$(grep -oP '^KERNEL_PATCHVER:=\K[\d.]+' ./target/linux/$WRT_TARGET/Makefile | head -n 1)
           fi
+          [ -z "$WRT_KVER" ] && export WRT_KVER=none
+          echo "WRT_KVER=$WRT_KVER" >> $GITHUB_ENV
 
-      - name: Release Firmware
-        uses: softprops/action-gh-release@master
+      - name: Download DL Package
+        run: |
+          cd ./wrt/
+          make defconfig
+          make download -j8
+          
+          find ./dl/ -size -1024c -exec ls -l {} \;
+          find ./dl/ -size -1024c -exec rm -f {} \;
+          
+      - name: Compile Firmware
+        id: compile
+        run: |
+          cd ./wrt/
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Organize Artifacts
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        run: |
+          cd ./wrt/bin/targets/*/*
+
+          [ -d packages ] && { 
+            PACKAGES_DIR=$(find packages -type f -name '*.apk' | xargs -r ls -S | head -n 1)
+            [ -n "$PACKAGES_DIR" ] && PACKAGES_DIR=$(dirname "$PACKAGES_DIR") || PACKAGES_DIR=packages
+            mv "$PACKAGES_DIR" ../../../packages
+          }
+          
+          rm -rf packages *.buildinfo *.json sha256sums seed
+          echo "WRT_PATH=$PWD" >> $GITHUB_ENV
+          
+      - name: Upload Firmware To Artifact
+        uses: actions/upload-artifact@main
+        if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag_name: ${{env.CI_NAME}}-${{env.WRT_CONFIG}}_${{env.WRT_DATE}}
-          files: ./wrt/upload/*.*
+          name: ${{env.WRT_DATE}}_firmware
+          path: ${{env.WRT_PATH}}
+          retention-days: 2
+
+      - name: Upload Packages To Artifact
+        uses: actions/upload-artifact@main
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        with:
+          name: ${{env.WRT_DATE}}_packages
+          path: ./wrt/bin/packages/
+          retention-days: 2
+
+      - name: Upload Packages To Release
+        uses: softprops/action-gh-release@master
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        with:
+          files: ./wrt/bin/packages/**/*.apk
+          tag_name: ${{ env.WRT_DATE }}
+          append_body: true
           body: |
-            这是个平台固件包，内含多个设备！
-            请注意选择你需要的设备固件！
-            不要问，刷就完事了！
+            - 软件包仅供测试
+            - 默认密码：password
+            - 默认地址：${{ env.WRT_IP }}
+            - 默认后台：[http://${{ env.WRT_IP }}](http://${{ env.WRT_IP }})
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-            全系带开源硬件加速，别问了！
+      - name: Organize Release
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        run: |
+          if [ -z "${{ env.WRT_FILES }}" ]; then
+              echo "WRT_TAG=${{ env.WRT_MARK }}-${{ env.WRT_DATE }}" >> $GITHUB_ENV
+          else
+              echo "WRT_TAG=${{ env.WRT_MARK }}-${{ env.WRT_CONFIG }}_${{ env.WRT_DATE }}" >> $GITHUB_ENV
+          fi
+          
+          echo "WRT_RELEASE=$WRT_TAG $WRT_THEME" >> $GITHUB_ENV
+          echo "WRT_RELEASE=$WRT_RELEASE, LuCI Version $(grep -Po '(?<=DISTRIB_REVISION=).*' $WRT_PATH/../../../etc/openwrt_release | tr -d "'") by $GITHUB_ACTOR" >> $GITHUB_ENV
+          
+          cat > release.txt <<EOF
+          当前使用源码: ${{ env.WRT_SOURCE }}
+          当前编译时间: ${{ env.WRT_DATE }}
+          当前默认后台: [http://${{ env.WRT_IP }}](http://${{ env.WRT_IP }})
+          当前默认密码: password
+          LuCI版本: $(grep -Po '(?<=DISTRIB_REVISION=).*' $WRT_PATH/../../../etc/openwrt_release | tr -d "'")
+          编译使用设置: [${{ env.CI_NAME }}](https://github.com/${{ github.repository }}/tree/main/Config)
+          EOF
 
-            源码：${{env.WRT_REPO}}
-            分支：${{env.WRT_BRANCH}}
-            提交：${{env.WRT_HASH}}
+      - name: Upload Firmware To Release
+        uses: softprops/action-gh-release@master
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        with:
+          files: ${{ env.WRT_PATH }}/*
+          name: ${{ env.WRT_RELEASE }}
+          tag_name: ${{ env.WRT_TAG }}
+          body_path: release.txt
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-            配置：${{env.WRT_CONFIG}}
-            平台：${{env.WRT_TARGET}}
-
-            登录地址：${{env.WRT_IP}}
-            登录密码：${{env.WRT_PW}}
-
-            WIFI名称：${{env.WRT_SSID}}
-            WIFI密码：${{env.WRT_WORD}}
-
-            内核版本：${{env.WRT_KVER}}
-            插件列表：${{env.WRT_LIST}}
+      - name: Telegram notification
+        continue-on-error: true
+        if: steps.compile.outputs.status == 'success' && !cancelled() && env.TELEGRAM_BOT_TOKEN != null && env.TELEGRAM_CHAT_ID != null
+        run: |
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+               -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+               -d "text=OpenWrt 固件编译完成！%0A仓库: ${{ github.repository }}%0ATag: ${{ env.WRT_TAG }}%0A时间: ${{ env.WRT_DATE }}"
