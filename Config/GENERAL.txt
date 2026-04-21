@@ -15,8 +15,8 @@ CONFIG_PACKAGE_luci-app-upnp=y
 CONFIG_PACKAGE_luci-app-wolplus=y
 CONFIG_PACKAGE_luci-theme-argon=y
 CONFIG_PACKAGE_luci-proto-wireguard=y
-CONFIG_PACKAGE_luci-app-zerotier=y
-CONFIG_PACKAGE_luci-app-vlmcsd=y
+# CONFIG_PACKAGE_luci-app-zerotier is not set
+# CONFIG_PACKAGE_luci-app-vlmcsd is not set
 CONFIG_PACKAGE_luci-app-ttyd=y
 CONFIG_PACKAGE_luci-app-cpufreq=y
 # CONFIG_PACKAGE_luci-app-ddns-go is not set
@@ -26,6 +26,8 @@ CONFIG_PACKAGE_luci-app-cpufreq=y
 # CONFIG_PACKAGE_luci-app-lucky is not set
 CONFIG_PACKAGE_luci-app-easytier=y
 CONFIG_PACKAGE_easytier=y
+CONFIG_PACKAGE_luci-app-tinyfilemanager=y
+CONFIG_PACKAGE_luci-app-natmapt=y
 # CONFIG_PACKAGE_sing-box is not set
 #删除插件
 CONFIG_PACKAGE_luci-app-attendedsysupgrade=n
@@ -150,5 +152,3 @@ CONFIG_PACKAGE_bash=y
 CONFIG_PACKAGE_bind-dig=y
 # CONFIG_PACKAGE_bind-host is not set
 CONFIG_PACKAGE_bind-nslookup=y
-
-

@@ -157,6 +157,11 @@ jobs:
         run: |
           cd ./wrt/
 
+          if ! grep -q '^src-git fantastic_packages ' feeds.conf.default; then
+            echo 'src-git fantastic_packages https://github.com/fantastic-packages/packages.git;master' >> feeds.conf.default
+          fi
+          grep 'fantastic_packages' feeds.conf.default
+
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
