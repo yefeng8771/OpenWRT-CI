@@ -141,7 +141,7 @@ if [ -f "./luci-app-easytier/version.mk" ]; then
 	fi
 fi
 
-# sing-box 不再作为软件包更新；改由 workflow 构建 reF1nd 二进制并注入 /usr/bin
+# sing-box 不再作为软件包更新；改由 workflow 下载 reF1nd 预编译二进制并注入 /usr/bin
 
 #修复libubox报错
 #sed -i '/include $(INCLUDE_DIR)\/cmake.mk/a PKG_BUILD_FLAGS:=no-werror' ../package/libs/libubox/Makefile

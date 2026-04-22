@@ -178,11 +178,6 @@ jobs:
 
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
-      - name: Setup Go for sing-box build
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.7'
-
       - name: Inject reF1nd sing-box Binary
         run: |
           set -e
@@ -197,51 +192,42 @@ jobs:
           OWRT_ARCH=$(grep -m 1 '^CONFIG_TARGET_ARCH_PACKAGES=' .config | cut -d'=' -f2 | tr -d '"')
           case "$OWRT_ARCH" in
             aarch64*|arm64*)
-              export GOARCH=arm64
+              SB_ARCH=arm64
               ;;
             x86_64|amd64*)
-              export GOARCH=amd64
-              ;;
-            i386*|i486*|i586*|i686*|pentium4)
-              export GOARCH=386
-              ;;
-            arm_*|armv7*|arm_cortex-*)
-              export GOARCH=arm
-              export GOARM=7
-              ;;
-            mips64el*|mips64le*)
-              export GOARCH=mips64le
-              ;;
-            mipsel*|mipsle*)
-              export GOARCH=mipsle
-              export GOMIPS=softfloat
-              ;;
-            mips64*)
-              export GOARCH=mips64
-              ;;
-            mips*)
-              export GOARCH=mips
-              export GOMIPS=softfloat
-              ;;
-            riscv64*)
-              export GOARCH=riscv64
+              SB_ARCH=amd64
               ;;
             *)
-              echo "Unsupported OpenWrt arch: $OWRT_ARCH"
+              echo "Unsupported sing-box release arch: $OWRT_ARCH"
               exit 1
               ;;
           esac
 
-          SB_TAG=$(curl -fsSL "https://api.github.com/repos/reF1nd/sing-box/tags" | jq -r 'map(select(.name | contains("reF1nd"))) | first | .name')
-          [ -n "$SB_TAG" ] && [ "$SB_TAG" != "null" ]
+          SB_API="https://api.github.com/repos/reF1nd/sing-box-releases/releases?per_page=20"
+          SB_URL=$(curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$SB_API" | jq -r --arg arch "$SB_ARCH" '
+              .[]
+              | select(.draft | not)
+              | .assets[]?
+              | select(.name | test("^sing-box-.*-linux-" + $arch + "-musl\\.tar\\.gz$"))
+              | .browser_download_url
+            ' | head -n 1)
+          [ -n "$SB_URL" ] && [ "$SB_URL" != "null" ]
 
-          rm -rf /tmp/reF1nd-sing-box
-          git clone --depth=1 --branch "$SB_TAG" https://github.com/reF1nd/sing-box.git /tmp/reF1nd-sing-box
-          cd /tmp/reF1nd-sing-box
+          SB_ASSET=$(basename "$SB_URL")
+          TMP_DIR=$(mktemp -d)
+          trap 'rm -rf "$TMP_DIR"' EXIT
 
-          BUILD_TAGS=$(cat release/DEFAULT_BUILD_TAGS_OTHERS)
-          CGO_ENABLED=0 GOOS=linux go build -v -trimpath -ldflags='-s -w -buildid=' -tags "$BUILD_TAGS" -o "$GITHUB_WORKSPACE/wrt/files/usr/bin/sing-box" ./cmd/sing-box
-          chmod 0755 "$GITHUB_WORKSPACE/wrt/files/usr/bin/sing-box"
+          curl -fL "$SB_URL" -o "$TMP_DIR/$SB_ASSET"
+          tar -xzf "$TMP_DIR/$SB_ASSET" -C "$TMP_DIR"
+
+          SB_BIN=$(find "$TMP_DIR" -type f -name sing-box | head -n 1)
+          [ -n "$SB_BIN" ] && [ -f "$SB_BIN" ]
+
+          install -m 0755 "$SB_BIN" "$GITHUB_WORKSPACE/wrt/files/usr/bin/sing-box"
+          echo "Injected $SB_ASSET"
           file "$GITHUB_WORKSPACE/wrt/files/usr/bin/sing-box"
 
       - name: Download Packages
