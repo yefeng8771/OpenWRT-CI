@@ -52,6 +52,11 @@ UPDATE_PACKAGE "kucat" "sirpdboy/luci-theme-kucat" "master"
 UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
 
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
+MOMO_FILE=$(find ./ -maxdepth 3 -type f -wholename "*/momo/Makefile" | head -n 1)
+if [ -f "$MOMO_FILE" ]; then
+	sed -i 's/ +sing-box//' "$MOMO_FILE"
+	echo "momo dependency on sing-box removed: $MOMO_FILE"
+fi
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
 UPDATE_PACKAGE "diskman" "lisaac/luci-app-diskman" "master"
@@ -135,22 +140,7 @@ if [ -f "./luci-app-easytier/version.mk" ]; then
 	fi
 fi
 
-#更新 sing-box 到 reF1nd/sing-box 最新 prerelease tag
-SB_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/sing-box/Makefile")
-if [ -f "$SB_FILE" ]; then
-	SB_TAG=$(curl -sL "https://api.github.com/repos/reF1nd/sing-box/tags" | jq -r 'map(select(.name | contains("reF1nd"))) | first | .name')
-	if [ -n "$SB_TAG" ] && [ "$SB_TAG" != "null" ]; then
-		# apk package version 不接受自定义后缀和部分 prerelease 连接符，源码 tag 与打包版本需分离
-		SB_SRC_TAG="$SB_TAG"
-		SB_VER=$(echo "$SB_TAG" | sed 's/^v//' | sed 's/-reF1nd.*//')
-		SB_PKG_VER=$(echo "$SB_VER" | sed -E 's/-alpha[.-]?([0-9]+)$/_alpha\1/' | sed -E 's/-beta[.-]?([0-9]+)$/_beta\1/' | sed -E 's/-rc[.-]?([0-9]+)$/_rc\1/')
-		sed -i "s|PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://codeload.github.com/reF1nd/sing-box/tar.gz/${SB_SRC_TAG}?|" "$SB_FILE"
-		sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$SB_PKG_VER/g" "$SB_FILE"
-		SB_HASH=$(curl -sL "https://codeload.github.com/reF1nd/sing-box/tar.gz/${SB_SRC_TAG}?" | sha256sum | cut -d ' ' -f 1)
-		sed -i "s/PKG_HASH:=.*/PKG_HASH:=$SB_HASH/g" "$SB_FILE"
-		echo "sing-box version updated to $SB_PKG_VER (source $SB_SRC_TAG, base $SB_VER for apk compatibility)"
-	fi
-fi
+# sing-box 不再作为软件包更新；改由 workflow 构建 reF1nd 二进制并注入 /usr/bin
 
 #修复libubox报错
 #sed -i '/include $(INCLUDE_DIR)\/cmake.mk/a PKG_BUILD_FLAGS:=no-werror' ../package/libs/libubox/Makefile
