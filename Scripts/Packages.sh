@@ -140,13 +140,15 @@ SB_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/sing-box/Mak
 if [ -f "$SB_FILE" ]; then
 	SB_TAG=$(curl -sL "https://api.github.com/repos/reF1nd/sing-box/tags" | jq -r 'map(select(.name | contains("reF1nd"))) | first | .name')
 	if [ -n "$SB_TAG" ] && [ "$SB_TAG" != "null" ]; then
-		# apk package version 不接受 reF1nd 这类带自定义后缀的版本号，清洗为基础版本
+		# apk package version 不接受自定义后缀和部分 prerelease 连接符，源码 tag 与打包版本需分离
+		SB_SRC_TAG="$SB_TAG"
 		SB_VER=$(echo "$SB_TAG" | sed 's/^v//' | sed 's/-reF1nd.*//')
-		sed -i "s|PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://codeload.github.com/reF1nd/sing-box/tar.gz/v\$(PKG_VERSION)?|" "$SB_FILE"
-		sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$SB_VER/g" "$SB_FILE"
-		SB_HASH=$(curl -sL "https://codeload.github.com/reF1nd/sing-box/tar.gz/v${SB_VER}?" | sha256sum | cut -d ' ' -f 1)
+		SB_PKG_VER=$(echo "$SB_VER" | sed -E 's/-alpha[.-]?([0-9]+)$/_alpha\1/' | sed -E 's/-beta[.-]?([0-9]+)$/_beta\1/' | sed -E 's/-rc[.-]?([0-9]+)$/_rc\1/')
+		sed -i "s|PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://codeload.github.com/reF1nd/sing-box/tar.gz/${SB_SRC_TAG}?|" "$SB_FILE"
+		sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$SB_PKG_VER/g" "$SB_FILE"
+		SB_HASH=$(curl -sL "https://codeload.github.com/reF1nd/sing-box/tar.gz/${SB_SRC_TAG}?" | sha256sum | cut -d ' ' -f 1)
 		sed -i "s/PKG_HASH:=.*/PKG_HASH:=$SB_HASH/g" "$SB_FILE"
-		echo "sing-box version updated to $SB_VER (from $SB_TAG for apk compatibility)"
+		echo "sing-box version updated to $SB_PKG_VER (source $SB_SRC_TAG, base $SB_VER for apk compatibility)"
 	fi
 fi
 
