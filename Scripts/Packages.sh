@@ -73,6 +73,7 @@ UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "luci-app-timewol luci-ap
 UPDATE_PACKAGE "luci-app-daed" "QiuSimons/luci-app-daed" "master"
 UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
 UPDATE_PACKAGE "luci-app-tinyfilemanager" "muink/luci-app-tinyfilemanager" "master"
+UPDATE_PACKAGE "natmapt" "muink/openwrt-natmapt" "master" "name"
 UPDATE_PACKAGE "luci-app-natmapt" "muink/luci-app-natmapt" "master"
 
 #更新软件包版本
