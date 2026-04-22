@@ -139,13 +139,14 @@ fi
 SB_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/sing-box/Makefile")
 if [ -f "$SB_FILE" ]; then
 	SB_TAG=$(curl -sL "https://api.github.com/repos/reF1nd/sing-box/tags" | jq -r 'map(select(.name | contains("reF1nd"))) | first | .name')
-	if [ -n "$SB_TAG" ]; then
-		SB_VER=$(echo $SB_TAG | sed 's/^v//')
+	if [ -n "$SB_TAG" ] && [ "$SB_TAG" != "null" ]; then
+		# apk package version 不接受 reF1nd 这类带自定义后缀的版本号，清洗为基础版本
+		SB_VER=$(echo "$SB_TAG" | sed 's/^v//' | sed 's/-reF1nd.*//')
 		sed -i "s|PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://codeload.github.com/reF1nd/sing-box/tar.gz/v\$(PKG_VERSION)?|" "$SB_FILE"
 		sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$SB_VER/g" "$SB_FILE"
 		SB_HASH=$(curl -sL "https://codeload.github.com/reF1nd/sing-box/tar.gz/v${SB_VER}?" | sha256sum | cut -d ' ' -f 1)
 		sed -i "s/PKG_HASH:=.*/PKG_HASH:=$SB_HASH/g" "$SB_FILE"
-		echo "sing-box version updated to $SB_VER"
+		echo "sing-box version updated to $SB_VER (from $SB_TAG for apk compatibility)"
 	fi
 fi
 
