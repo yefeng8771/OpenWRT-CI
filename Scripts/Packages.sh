@@ -61,7 +61,7 @@ UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
 UPDATE_PACKAGE "diskman" "lisaac/luci-app-diskman" "master"
 UPDATE_PACKAGE "fancontrol" "rockjake/luci-app-fancontrol" "main"
-UPDATE_PACKAGE "mosdns" "sbwml/luci-app-mosdns" "v5" "" "v2dat"
+# mosdns 不再作为软件包更新；改由 workflow 下载 yyysuo 预编译二进制并注入 files
 #UPDATE_PACKAGE "netspeedtest" "sirpdboy/luci-app-netspeedtest" "master" "" "homebox speedtest"
 UPDATE_PACKAGE "openlist2" "sbwml/luci-app-openlist2" "main"
 UPDATE_PACKAGE "partexp" "sirpdboy/luci-app-partexp" "main"

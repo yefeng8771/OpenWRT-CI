@@ -178,7 +178,7 @@ jobs:
 
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
-      - name: Inject reF1nd sing-box Binary
+      - name: Inject yyysuo mosdns Binary
         run: |
           set -e
           cd "$GITHUB_WORKSPACE/wrt"
@@ -192,44 +192,38 @@ jobs:
           OWRT_ARCH=$(grep -m 1 '^CONFIG_TARGET_ARCH_PACKAGES=' .config | cut -d'=' -f2 | tr -d '"')
           case "$OWRT_ARCH" in
             aarch64*|arm64*)
-              SB_ARCH=arm64
+              MOSDNS_ARCH=arm64
               ;;
             x86_64|amd64*)
-              SB_ARCH=amd64
+              MOSDNS_ARCH=amd64
               ;;
             *)
-              echo "Unsupported sing-box release arch: $OWRT_ARCH"
+              echo "Unsupported mosdns release arch: $OWRT_ARCH"
               exit 1
               ;;
           esac
 
-          SB_API="https://api.github.com/repos/reF1nd/sing-box-releases/releases?per_page=20"
-          SB_URL=$(curl -fsSL \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            "$SB_API" | jq -r --arg arch "$SB_ARCH" '
-              .[]
-              | select(.draft | not)
-              | .assets[]?
-              | select(.name | test("^sing-box-.*-linux-" + $arch + "-musl\\.tar\\.gz$"))
+          MOSDNS_API="https://api.github.com/repos/yyysuo/mosdns/releases/latest"
+          MOSDNS_URL=$(curl -fsSL             -H "Authorization: Bearer $GITHUB_TOKEN"             -H 'Accept: application/vnd.github+json'             "$MOSDNS_API" | jq -r --arg arch "$MOSDNS_ARCH" '
+              .assets[]?
+              | select(.name == ("mosdns-linux-" + $arch + ".zip"))
               | .browser_download_url
             ' | head -n 1)
-          [ -n "$SB_URL" ] && [ "$SB_URL" != "null" ]
+          [ -n "$MOSDNS_URL" ] && [ "$MOSDNS_URL" != "null" ]
 
-          SB_ASSET=$(basename "$SB_URL")
+          MOSDNS_ASSET=$(basename "$MOSDNS_URL")
           TMP_DIR=$(mktemp -d)
           trap 'rm -rf "$TMP_DIR"' EXIT
 
-          curl -fL "$SB_URL" -o "$TMP_DIR/$SB_ASSET"
-          tar -xzf "$TMP_DIR/$SB_ASSET" -C "$TMP_DIR"
+          curl -fL "$MOSDNS_URL" -o "$TMP_DIR/$MOSDNS_ASSET"
+          unzip -q "$TMP_DIR/$MOSDNS_ASSET" -d "$TMP_DIR/out"
 
-          SB_BIN=$(find "$TMP_DIR" -type f -name sing-box | head -n 1)
-          [ -n "$SB_BIN" ] && [ -f "$SB_BIN" ]
+          MOSDNS_BIN=$(find "$TMP_DIR/out" -type f -name mosdns | head -n 1)
+          [ -n "$MOSDNS_BIN" ] && [ -f "$MOSDNS_BIN" ]
 
-          install -m 0755 "$SB_BIN" "$GITHUB_WORKSPACE/wrt/files/usr/bin/sing-box"
-          echo "Injected $SB_ASSET"
-          file "$GITHUB_WORKSPACE/wrt/files/usr/bin/sing-box"
-
+          install -m 0755 "$MOSDNS_BIN" "$GITHUB_WORKSPACE/wrt/files/usr/bin/mosdns"
+          echo "Injected $MOSDNS_ASSET"
+          file "$GITHUB_WORKSPACE/wrt/files/usr/bin/mosdns"
       - name: Download Packages
         if: env.WRT_TEST != 'true'
         run: |
