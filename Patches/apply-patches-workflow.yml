@@ -1,0 +1,28 @@
+# apply-patches.yml — WRT-CORE.yml 中新增的 Apply Patches step
+# 将以下 step 插入 WRT-CORE.yml 的 "Custom Settings" step 之后
+# 这样上游的 WRT-CORE.yml 可以保持原样，只需添加这一个 step
+
+# ------ 在 WRT-CORE.yml 的 jobs.core.steps 中添加 ------
+
+      - name: Apply Custom Patches
+        run: |
+          # 品牌定制
+          bash $GITHUB_WORKSPACE/Patches/brand.sh
+          # 设备选择
+          bash $GITHUB_WORKSPACE/Patches/device-config.sh
+          # 自定义包增删
+          bash $GITHUB_WORKSPACE/Patches/packages.sh
+          # 细粒度补丁
+          for f in $GITHUB_WORKSPACE/Patches/patches.d/*.sh; do
+            bash "$f"
+          done
+
+      - name: Inject Prebuilt Binaries
+        run: |
+          bash $GITHUB_WORKSPACE/Patches/inject-binaries.sh $GITHUB_WORKSPACE/wrt
+
+# ------ diy.sh 中需要修改的 ------
+# 1. 在 generate_config 调用前，追加 CUSTOM.txt:
+#    cat $GITHUB_WORKSPACE/Config/CUSTOM.txt >> .config
+# 2. feeds update 之前调用 fantastic-feed patch:
+#    bash $GITHUB_WORKSPACE/Patches/patches.d/fantastic-feed.sh

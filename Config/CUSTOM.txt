@@ -1,0 +1,27 @@
+# CUSTOM.txt — 自定义配置覆盖
+# 此文件追加到 GENERAL.txt 后，覆盖上游默认值
+# 不需要修改上游的 GENERAL.txt，只需在此文件中覆盖
+
+# ============ 代理插件：禁用不需要的 ============
+CONFIG_PACKAGE_luci-app-homeproxy=n
+CONFIG_PACKAGE_luci-app-nikki=n
+CONFIG_PACKAGE_luci-app-openclash=n
+CONFIG_PACKAGE_luci-app-passwall=n
+CONFIG_PACKAGE_luci-app-passwall2=n
+CONFIG_PACKAGE_luci-app-sing-box=n
+
+# ============ 功能插件调整 ============
+CONFIG_PACKAGE_luci-app-gecoosac=n
+CONFIG_PACKAGE_luci-app-tailscale=n
+CONFIG_PACKAGE_luci-app-zerotier=n
+CONFIG_PACKAGE_luci-app-vlmcsd=n
+CONFIG_PACKAGE_luci-app-ddns-go=n
+
+# ============ 新增插件 ============
+CONFIG_PACKAGE_luci-app-lucky=y
+CONFIG_PACKAGE_luci-app-tinyfilemanager=y
+CONFIG_PACKAGE_luci-app-natmapt=y
+CONFIG_PACKAGE_luci-app-momo=y
+
+# ============ geodata：由 daed 自带 ============
+# CONFIG_PACKAGE_v2ray-geodata-updater is not set

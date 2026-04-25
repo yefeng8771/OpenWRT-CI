@@ -127,22 +127,12 @@ UPDATE_VERSION() {
 rm -rf ../feeds/luci/applications/luci-app-{passwall*,mosdns,dockerman,dae*,bypass*}
 rm -rf ../feeds/packages/net/{v2ray-geodata,dae*}
 cp -r $GITHUB_WORKSPACE/package/* ./
-#修复daed/Makefile
-rm -rf luci-app-daed/daed/Makefile && cp -r $GITHUB_WORKSPACE/patches/daed/Makefile luci-app-daed/daed/
-cat luci-app-daed/daed/Makefile
+#修复daed/Makefile（通过 Patches/patches.d/daed-makefile.sh 执行）
+#rm -rf luci-app-daed/daed/Makefile && cp -r $GITHUB_WORKSPACE/patches/daed/Makefile luci-app-daed/daed/
+#cat luci-app-daed/daed/Makefile
 
-#更新 easytier 到 EasyTier/EasyTier 最新 prerelease
-if [ -f "./luci-app-easytier/version.mk" ]; then
-	ET_TAG=$(curl -sL "https://api.github.com/repos/EasyTier/EasyTier/releases" | jq -r 'map(select(.prerelease == true)) | first | .tag_name')
-	if [ -n "$ET_TAG" ]; then
-		ET_VER=$(echo $ET_TAG | sed 's/^v//')
-		sed -i "s/EASYTIER_VERSION=.*/EASYTIER_VERSION=$ET_VER/g" ./luci-app-easytier/version.mk
-		echo "easytier version updated to $ET_VER"
-	fi
-fi
-
-# sing-box 不再作为软件包更新；改由 workflow 下载 reF1nd 预编译二进制并注入 /usr/bin
-
+#更新 easytier 到最新 prerelease（通过 Patches/patches.d/easytier-pre.sh 执行）
+#if [ -f "./luci-app-easytier/version.mk" ]; then ... fi
 #修复libubox报错
 #sed -i '/include $(INCLUDE_DIR)\/cmake.mk/a PKG_BUILD_FLAGS:=no-werror' ../package/libs/libubox/Makefile
 #sed -i 's|TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include|& -Wno-error=format-nonliteral -Wno-format-nonliteral|' ../package/libs/libubox/Makefile
