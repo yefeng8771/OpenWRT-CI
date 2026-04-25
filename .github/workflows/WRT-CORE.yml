@@ -185,13 +185,15 @@ jobs:
           bash $GITHUB_WORKSPACE/Patches/brand.sh
           # 设备选择
           bash $GITHUB_WORKSPACE/Patches/device-config.sh
-          # 自定义包增删
-          cd ./wrt/package/ && bash $GITHUB_WORKSPACE/Patches/packages.sh
+          # 自定义包增删（在 wrt/package/ 目录下执行）
+          cd ./wrt/package/
+          bash $GITHUB_WORKSPACE/Patches/packages.sh
+          cd $GITHUB_WORKSPACE
           # 细粒度补丁
           for f in $GITHUB_WORKSPACE/Patches/patches.d/*.sh; do bash "$f"; done
           # 追加自定义配置覆盖
           cat $GITHUB_WORKSPACE/Config/CUSTOM.txt >> ./wrt/.config
-          # defconfig 和 clean 移到 patch 之后
+          # defconfig 和 clean 在所有 patch 之后执行
           cd ./wrt/ && make defconfig -j$(nproc) && make clean -j$(nproc)
 
       - name: Inject Prebuilt Binaries
