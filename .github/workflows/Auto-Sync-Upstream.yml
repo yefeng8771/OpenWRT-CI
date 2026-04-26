@@ -1,0 +1,102 @@
+# 自动同步上游并触发编译
+name: Auto-Sync-Upstream
+
+on:
+  # 每天早上3点检查上游更新（上海时间11点）
+  schedule:
+    - cron: '0 19 * * *'
+  # 手动触发
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream
+        run: |
+          git remote add upstream https://github.com/davidtall/OpenWRT-CI.git 2>/dev/null || git remote set-url upstream https://github.com/davidtall/OpenWRT-CI.git
+          git fetch upstream main
+
+      - name: Check for Updates
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/main)
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          echo "local=$LOCAL" >> $GITHUB_OUTPUT
+          echo "upstream=$UPSTREAM" >> $GITHUB_OUTPUT
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+          if [ "$BEHIND" -gt 0 ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "Upstream has $BEHIND new commits"
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "Already up to date"
+          fi
+
+      - name: Merge Upstream
+        if: steps.check.outputs.has_updates == 'true'
+        run: |
+          set +e
+          git merge upstream/main --no-edit
+          MERGE_EXIT=$?
+          set -e
+
+          if [ $MERGE_EXIT -ne 0 ]; then
+            echo "::error::Merge conflict detected! Attempting auto-resolve..."
+
+            # 列出冲突文件
+            CONFLICTS=$(git diff --name-only --diff-filter=U)
+            echo "Conflicting files: $CONFLICTS"
+
+            # 对于已外置到 Patches/ 的自定义文件，优先采用上游版本
+            # 因为我们的自定义会在 CI 构建时通过 Patches/ 重新应用
+            for FILE in $CONFLICTS; do
+              echo "Resolving conflict in $FILE: keeping upstream version (patches will re-apply customizations during build)"
+              git checkout --theirs "$FILE"
+              git add "$FILE"
+            done
+
+            # 尝试完成 merge
+            git commit --no-edit -m "chore: sync upstream (auto-resolved conflicts with upstream preference)"
+          else
+            echo "Merge succeeded without conflicts"
+          fi
+
+      - name: Push Changes
+        if: steps.check.outputs.has_updates == 'true'
+        run: |
+          git push origin main
+          echo "Changes pushed successfully"
+
+      - name: Trigger Build
+        if: steps.check.outputs.has_updates == 'true'
+        run: |
+          # 触发 QCA 编译
+          gh workflow run QCA-6.12-VIKINGYFY.yml
+          echo "Build triggered"
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.check.outputs.has_updates }}" == "true" ]; then
+            echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
+            echo "- Upstream commits behind: ${{ steps.check.outputs.behind }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Merged and pushed to main" >> $GITHUB_STEP_SUMMARY
+            echo "- Build triggered" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## No Updates" >> $GITHUB_STEP_SUMMARY
+            echo "Already in sync with upstream" >> $GITHUB_STEP_SUMMARY
+          fi
