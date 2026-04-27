@@ -24,10 +24,12 @@ if [ -n "$MOSDNS_DIRS" ]; then
     echo "$MOSDNS_DIRS" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed mosdns: $dir"; done
 fi
 
-# 删除 easytier 源码包（改用 prerelease 二进制注入）
-ET_DIRS=$(find ./ -maxdepth 2 -type d -iname "*easytier*" 2>/dev/null || true)
-if [ -n "$ET_DIRS" ]; then
-    echo "$ET_DIRS" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed easytier: $dir"; done
+# 删除 easytier 二进制子包（改用 prerelease 二进制注入）
+# 注意：EasyTier/luci-app-easytier clone 后目录结构为 easytier/{easytier,luci-app-easytier,version.mk}
+# 只删除 easytier/easytier/ 子目录（二进制包），保留 luci-app-easytier/（LuCI 界面）
+ET_SUBDIRS=$(find ./ -maxdepth 3 -type d -path "*/easytier/easytier" 2>/dev/null || true)
+if [ -n "$ET_SUBDIRS" ]; then
+    echo "$ET_SUBDIRS" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed easytier binary package: $dir"; done
 fi
 
 # 新增插件
