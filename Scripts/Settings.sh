@@ -17,8 +17,8 @@ if [ -f "$WIFI_SH" ]; then
 	#修改WIFI密码
 	sed -i "s/BASE_WORD='.*'/BASE_WORD='$WRT_WORD'/g" $WIFI_SH
 elif [ -f "$WIFI_UC" ]; then
-	#修改WIFI默认名称，根据频段设置不同SSID
-	sed -i 's/"ImmortalWRT"/(band_name == "2g" ? "QWRT4" : band_name == "5g" ? "QWRT5" : "QWRT6")/g' $WIFI_UC
+	#修改WIFI名称
+	sed -i "s/ssid='.*'/ssid='$WRT_SSID'/g" $WIFI_UC
 	#修改WIFI密码
 	sed -i "s/key='.*'/key='$WRT_WORD'/g" $WIFI_UC
 	#修改WIFI地区
@@ -36,7 +36,7 @@ sed -i "s/hostname='.*'/hostname='$WRT_NAME'/g" $CFG_FILE
 vlmcsd_patches="./feeds/packages/net/vlmcsd/patches/"
 mkdir -p $vlmcsd_patches && cp -f ../patches/001-fix_compile_with_ccache.patch $vlmcsd_patches
 
-sed -i 's/mirrors.vsean.net/mirror.nju.edu.cn/g' ./package/emortal/default-settings/files/99-default-settings-chinese
+sed -i 's/mirrors.vsean.net\/openwrt/mirror.nju.edu.cn\/immortalwrt/g' ./package/emortal/default-settings/files/99-default-settings-chinese
 
 #配置文件修改
 echo "CONFIG_PACKAGE_luci=y" >> ./.config
@@ -46,9 +46,7 @@ echo "CONFIG_PACKAGE_luci-theme-$WRT_THEME=y" >> ./.config
 
 #手动调整的插件
 if [ -n "$WRT_PACKAGE" ]; then
-	echo -e "$WRT_PACKAGE" \
-		| sed '/^[[:space:]]*$/d' \
-		| grep -E '^(CONFIG_[A-Z0-9_]+=.*|# CONFIG_[A-Z0-9_]+ is not set|#.*)$' >> ./.config || true
+	echo -e "$WRT_PACKAGE" >> ./.config
 fi
 
 #高通平台调整
