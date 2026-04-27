@@ -179,6 +179,11 @@ jobs:
 
           $GITHUB_WORKSPACE/Scripts/Settings.sh
 
+          # WRT_PACKAGE 输入验证（过滤空行和非法格式）
+          if [ -n "$WRT_PACKAGE" ]; then
+            echo -e "$WRT_PACKAGE" | sed '/^[[:space:]]*$/d' | grep -E '^(CONFIG_[A-Z0-9_]+=.*|# CONFIG_[A-Z0-9_]+ is not set|#.*)$' >> ./.config || true
+          fi
+
       - name: Apply Custom Patches
         run: |
           # 品牌定制
