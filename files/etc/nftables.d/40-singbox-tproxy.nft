@@ -1,0 +1,73 @@
+# sing-box TProxy 规则 (fw4 自动加载 /etc/nftables.d/*.nft)
+#
+# 作用：把 LAN 流量按 fwmark=1 透传给 sing-box tproxy 端口 7896，
+#      路由器自身流量在 output 链同样处理（除 sing-box 自己发出的，避免回环）。
+#
+# 配套：
+#   - /etc/init.d/sing-box 已设置 ip rule fwmark 1 → table 100 → local default → lo
+#   - 198.18.0.0/15 / fc00::/18 是 sing-box 内部 fakeip 段，必须 TProxy 不能直连
+#   - 10.10.1.0/24 是 EasyTier mesh 段，直连
+#   - 路由器自身 LAN 172.16.3.0/24 走 ip_is_private 直连，不需要在这里再列
+
+table inet sing-box {
+
+    set local_ipv4 {
+        type ipv4_addr
+        flags interval
+        elements = {
+            0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
+            169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24,
+            192.88.99.0/24, 192.168.0.0/16,
+            198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 240.0.0.0/4,
+            255.255.255.255/32
+        }
+    }
+
+    set local_ipv6 {
+        type ipv6_addr
+        flags interval
+        elements = {
+            ::/128, ::1/128, ::ffff:0.0.0.0/96, 64:ff9b::/96,
+            100::/64, 2001::/32, 2001:10::/28, 2001:20::/28,
+            2001:db8::/32, 2002::/16, fe80::/10, ff00::/8
+        }
+    }
+
+    chain mangle_prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+
+        # === fakeip 段必须 TProxy ===
+        ip  daddr 198.18.0.0/15 meta l4proto { tcp, udp } meta mark set 0x1 tproxy ip  to :7896 accept
+        ip6 daddr fc00::/18     meta l4proto { tcp, udp } meta mark set 0x1 tproxy ip6 to :7896 accept
+
+        # === 私网/保留段直连 ===
+        ip  daddr @local_ipv4 return
+        ip6 daddr @local_ipv6 return
+
+        # === EasyTier mesh 段直连 ===
+        ip daddr 10.10.1.0/24 return
+
+        # === 其它流量送 TProxy ===
+        meta l4proto { tcp, udp } meta mark set 0x1 tproxy ip  to :7896
+        meta l4proto { tcp, udp } meta mark set 0x1 tproxy ip6 to :7896
+    }
+
+    # 路由器自身发起的流量也要进代理（output 链）
+    # sing-box 进程本身在 outbound 配置里设置了 routing_mark=255，下面的 mark 0xff return 让它绕过自己
+    chain mangle_output {
+        type route hook output priority mangle; policy accept;
+
+        meta mark 0xff return            # sing-box 自己的流量豁免
+        meta l4proto { tcp, udp } meta skuid root meta mark 0x0 jump output_mark
+        return
+    }
+
+    chain output_mark {
+        ip  daddr @local_ipv4 return
+        ip6 daddr @local_ipv6 return
+        ip daddr 10.10.1.0/24 return
+
+        ip  daddr 198.18.0.0/15 meta mark set 0x1
+        ip6 daddr fc00::/18     meta mark set 0x1
+    }
+}

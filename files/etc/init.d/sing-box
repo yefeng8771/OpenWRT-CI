@@ -1,0 +1,70 @@
+#!/bin/sh /etc/rc.common
+# sing-box procd init for OpenWrt — naked-core (no momo wrapper)
+#
+# 启动前提：
+#   - /usr/bin/sing-box 二进制由 CI 注入
+#   - /etc/sing-box/config.json 已存在
+#   - /etc/nftables.d/40-singbox-tproxy.nft 已加载（fw4 reload）
+#   - 内核 BPF + nft-tproxy + nft-socket 已编进固件
+
+START=99
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/sing-box
+CONF_DIR=/etc/sing-box
+CONF=$CONF_DIR/config.json
+LOG=/var/log/sing-box.log
+
+FWMARK=1
+ROUTE_TABLE=100
+
+setup_routing() {
+    # 让带 fwmark=1 的报文走 table 100 → local default → 本机 sing-box tproxy 监听
+    ip -4 rule  show | grep -q "fwmark 0x1 lookup $ROUTE_TABLE" || \
+        ip -4 rule add fwmark $FWMARK table $ROUTE_TABLE pref 100
+    ip -4 route show table $ROUTE_TABLE | grep -q "local default" || \
+        ip -4 route add local default dev lo table $ROUTE_TABLE
+    ip -6 rule  show | grep -q "fwmark 0x1 lookup $ROUTE_TABLE" || \
+        ip -6 rule add fwmark $FWMARK table $ROUTE_TABLE pref 100
+    ip -6 route show table $ROUTE_TABLE 2>/dev/null | grep -q "local default" || \
+        ip -6 route add local default dev lo table $ROUTE_TABLE
+}
+
+teardown_routing() {
+    ip -4 rule  del fwmark $FWMARK table $ROUTE_TABLE 2>/dev/null || true
+    ip -4 route flush table $ROUTE_TABLE 2>/dev/null || true
+    ip -6 rule  del fwmark $FWMARK table $ROUTE_TABLE 2>/dev/null || true
+    ip -6 route flush table $ROUTE_TABLE 2>/dev/null || true
+}
+
+start_service() {
+    [ -x "$PROG" ] || { echo "sing-box binary missing"; return 1; }
+    [ -f "$CONF" ] || { echo "sing-box config missing"; return 1; }
+
+    setup_routing
+    fw4 reload >/dev/null 2>&1 || true
+
+    procd_open_instance sing-box
+    procd_set_param command "$PROG" -D "$CONF_DIR" -c "$CONF" run
+    procd_set_param respawn 3600 5 5
+    procd_set_param limits nofile="1000000 1000000"
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param file "$CONF"
+    procd_close_instance
+}
+
+stop_service() {
+    teardown_routing
+}
+
+reload_service() {
+    stop
+    sleep 1
+    start
+}
+
+service_triggers() {
+    procd_add_reload_trigger "sing-box"
+}

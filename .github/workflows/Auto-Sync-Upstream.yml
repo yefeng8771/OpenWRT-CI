@@ -1,202 +1,165 @@
-# 自动同步上游并触发编译
-# 使用 Git Data API 强制重置到上游 HEAD，再通过 Contents API 恢复自定义文件
+# 自动同步上游 davidtall/OpenWRT-CI 到 main 并触发 QWRT 编译
+#
+# 设计：用 GitHub Merges API（POST /repos/X/Y/merges）创建一个真正的合并提交，
+# 而不是 force-reset。这样我们的自定义文件（Patches/、Config/CUSTOM.txt、
+# .github/workflows/QWRT.yml、.github/workflows/Auto-Sync-Upstream.yml、files/、docs/）
+# 不会被擦除。
+#
+# 工作流：
+#   1. 比较 ahead/behind
+#   2. 若 behind == 0 直接退出
+#   3. 在我们仓库里创建临时分支 upstream-sync-temp 指向上游 HEAD
+#   4. POST /repos/yefeng8771/OpenWRT-CI/merges  base=main  head=upstream-sync-temp
+#      - 成功：合并提交进 main
+#      - 409：冲突，开 issue，跳过本次
+#   5. 删除临时分支
+#   6. 关闭 QCA-6.12-VIKINGYFY.yml 的自动触发（防它在 Auto-Clean 完成后跑非 QWRT 矩阵）
+#   7. 触发 QWRT.yml
 name: Auto-Sync-Upstream
 
 on:
-  # 每天凌晨3点（上海时间）
   schedule:
-    - cron: '0 19 * * *'
-  # 手动触发
+    - cron: '0 19 * * *'   # 每天 03:00 上海
   workflow_dispatch:
 
 permissions:
   contents: write
   actions: write
+  issues: write
+
+env:
+  UPSTREAM_OWNER: davidtall
+  UPSTREAM_REPO: OpenWRT-CI
+  UPSTREAM_BRANCH: main
+  TEMP_BRANCH: upstream-sync-temp
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Check for Updates
-        id: check
+      - name: Compare with upstream
+        id: cmp
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BEHIND=$(gh api repos/yefeng8771/OpenWRT-CI/compare/davidtall:main...yefeng8771:main \
-            --jq '.behind_by')
+          INFO=$(gh api "repos/${{ github.repository }}/compare/${UPSTREAM_OWNER}:${UPSTREAM_BRANCH}...${{ github.repository_owner }}:main")
+          AHEAD=$(echo "$INFO" | jq -r '.ahead_by')
+          BEHIND=$(echo "$INFO" | jq -r '.behind_by')
+          UPSTREAM_SHA=$(gh api "repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits/${UPSTREAM_BRANCH}" --jq '.sha')
+          echo "ahead=$AHEAD"   >> $GITHUB_OUTPUT
           echo "behind=$BEHIND" >> $GITHUB_OUTPUT
-          if [ "$BEHIND" -gt 0 ]; then
-            echo "has_updates=true" >> $GITHUB_OUTPUT
-            echo "Upstream has $BEHIND new commits"
-          else
-            echo "has_updates=false" >> $GITHUB_OUTPUT
-            echo "Already up to date"
-          fi
+          echo "upstream_sha=$UPSTREAM_SHA" >> $GITHUB_OUTPUT
+          echo "Status: ahead=$AHEAD, behind=$BEHIND, upstream HEAD=$UPSTREAM_SHA"
 
-      - name: Sync via Git Data API
-        if: steps.check.outputs.has_updates == 'true'
+      - name: Skip if up to date
+        if: steps.cmp.outputs.behind == '0'
+        run: echo "Already up to date with upstream"
+
+      - name: Create temp ref pointing to upstream HEAD
+        if: steps.cmp.outputs.behind != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          UPSTREAM_SHA=$(gh api repos/davidtall/OpenWRT-CI/commits/main --jq '.sha')
-          echo "Upstream HEAD: $UPSTREAM_SHA"
-          CURRENT_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/git/refs/heads/main --jq '.object.sha')
-          echo "Current main: $CURRENT_SHA"
-          gh api repos/yefeng8771/OpenWRT-CI/git/refs/heads/main \
-            -X PATCH \
-            --input - <<EOF
-          {"sha":"$UPSTREAM_SHA","force":true}
-          EOF
-          echo "Main reset to upstream: $UPSTREAM_SHA"
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${TEMP_BRANCH}" 2>/dev/null || true
+          gh api -X POST   "repos/${{ github.repository }}/git/refs" \
+            -f ref="refs/heads/${TEMP_BRANCH}" \
+            -f sha="${{ steps.cmp.outputs.upstream_sha }}"
+          echo "Temp branch ${TEMP_BRANCH} created at ${{ steps.cmp.outputs.upstream_sha }}"
 
-      - name: Restore Custom Files
-        if: steps.check.outputs.has_updates == 'true'
+      - name: Merge upstream into main
+        id: merge
+        if: steps.cmp.outputs.behind != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Verifying custom files after upstream sync..."
-          # Patches/ 目录
-          for f in brand.sh device-config.sh packages.sh inject-binaries.sh; do
-            FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Patches/$f --jq '.sha' 2>/dev/null || echo "")
-            if [ -z "$FILE_SHA" ]; then
-              echo "WARNING: Patches/$f missing, needs manual restore"
+          set +e
+          RESPONSE=$(gh api -X POST "repos/${{ github.repository }}/merges" \
+            -f base="main" \
+            -f head="${TEMP_BRANCH}" \
+            -f commit_message="chore(sync): merge upstream ${UPSTREAM_OWNER}/${UPSTREAM_REPO}@${{ steps.cmp.outputs.upstream_sha }}" \
+            2>&1)
+          STATUS=$?
+          set -e
+          echo "$RESPONSE"
+          if [ $STATUS -ne 0 ]; then
+            if echo "$RESPONSE" | grep -qi "merge conflict"; then
+              echo "result=conflict" >> $GITHUB_OUTPUT
+            elif echo "$RESPONSE" | grep -qi "204"; then
+              echo "result=already" >> $GITHUB_OUTPUT
             else
-              echo "Patches/$f OK"
+              echo "result=error" >> $GITHUB_OUTPUT
             fi
-          done
-          # patches.d/ 目录
-          for f in fantastic-feed.sh momo-fix.sh easytier-pre.sh wifi-band-ssid.sh; do
-            FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Patches/patches.d/$f --jq '.sha' 2>/dev/null || echo "")
-            if [ -z "$FILE_SHA" ]; then
-              echo "WARNING: Patches/patches.d/$f missing, needs manual restore"
-            else
-              echo "Patches/patches.d/$f OK"
-            fi
-          done
-          # Config/CUSTOM.txt
-          FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Config/CUSTOM.txt --jq '.sha' 2>/dev/null || echo "")
-          if [ -z "$FILE_SHA" ]; then
-            echo "WARNING: Config/CUSTOM.txt missing, needs manual restore"
           else
-            echo "Config/CUSTOM.txt OK"
+            echo "result=success" >> $GITHUB_OUTPUT
+            MERGE_SHA=$(echo "$RESPONSE" | jq -r '.sha // empty')
+            echo "merge_sha=$MERGE_SHA" >> $GITHUB_OUTPUT
+            echo "Merge commit: $MERGE_SHA"
           fi
 
-      - name: Restore Workflow Modifications
-        if: steps.check.outputs.has_updates == 'true'
+      - name: Open issue on conflict
+        if: steps.merge.outputs.result == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_SHA: ${{ steps.cmp.outputs.upstream_sha }}
+          AHEAD: ${{ steps.cmp.outputs.ahead }}
+          BEHIND: ${{ steps.cmp.outputs.behind }}
+        run: |
+          cat > /tmp/issue.md <<'BODY'
+          Auto-Sync 检测到与上游存在合并冲突，请本地解决：
+
+          ```
+          git remote add upstream https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}.git
+          git fetch upstream ${UPSTREAM_BRANCH}
+          git checkout main
+          git merge upstream/${UPSTREAM_BRANCH}
+          # 解决冲突后
+          git push origin main
+          ```
+          BODY
+          # 用 envsubst 替换占位
+          UPSTREAM_OWNER="$UPSTREAM_OWNER" UPSTREAM_REPO="$UPSTREAM_REPO" UPSTREAM_BRANCH="$UPSTREAM_BRANCH" \
+            envsubst < /tmp/issue.md > /tmp/issue.final.md
+          echo "" >> /tmp/issue.final.md
+          echo "ahead=${AHEAD}, behind=${BEHIND}, upstream_sha=${UPSTREAM_SHA}" >> /tmp/issue.final.md
+          gh issue create \
+            --title "Auto-Sync: merge conflict with upstream@${UPSTREAM_SHA}" \
+            --body-file /tmp/issue.final.md \
+            --label "auto-sync-conflict" || true
+
+      - name: Cleanup temp ref
+        if: always() && steps.cmp.outputs.behind != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # WRT-CORE.yml 需要重新应用自定义修改
-          gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml --jq '.content' 2>/dev/null | base64 -d > /tmp/wrt-core-upstream.yml
-          WRT_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml --jq '.sha' 2>/dev/null)
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${TEMP_BRANCH}" 2>/dev/null || true
 
-          cat > /tmp/patch_wrt_core.py << 'PYEOF'
-          import sys, base64, json
-
-          with open(sys.argv[1], 'r') as f:
-              content = f.read()
-
-          # Add fantastic-packages feed in Update Feeds step
-          old_feeds = """      - name: Update Feeds
-            run: |
-              cd ./wrt/
-
-              ./scripts/feeds update -a
-              ./scripts/feeds install -a"""
-
-          new_feeds = """      - name: Update Feeds
-            run: |
-              cd ./wrt/
-
-              # 添加 fantastic-packages feed
-              echo "src-git --root=feeds fantastic_packages https://github.com/fantastic-packages/packages.git;master" >> feeds.conf.default
-
-              ./scripts/feeds update -a
-              ./scripts/feeds install -a"""
-
-          content = content.replace(old_feeds, new_feeds)
-
-          # Modify Custom Settings step - remove make defconfig/clean and add WRT_PACKAGE
-          old_settings = """          $GITHUB_WORKSPACE/Scripts/Settings.sh
-
-              make defconfig -j$(nproc) && make clean -j$(nproc)"""
-
-          new_settings = """          $GITHUB_WORKSPACE/Scripts/Settings.sh
-
-              # WRT_PACKAGE 输入验证（过滤空行和非法格式）
-              if [ -n "$WRT_PACKAGE" ]; then
-                echo -e "$WRT_PACKAGE" | sed '/^[[:space:]]*$/d' | grep -E '^(CONFIG_[A-Z0-9_]+=.*|# CONFIG_[A-Z0-9_]+ is not set|#.*)$' >> ./.config || true
-              fi"""
-
-          content = content.replace(old_settings, new_settings)
-
-          # Add Apply Custom Patches and Inject Prebuilt Binaries steps
-          old_download = """      - name: Download Packages"""
-
-          new_steps = """      - name: Apply Custom Patches
-            run: |
-              # 品牌定制
-              bash $GITHUB_WORKSPACE/Patches/brand.sh
-              # 设备选择
-              bash $GITHUB_WORKSPACE/Patches/device-config.sh
-              # 自定义包增删（在 wrt/package/ 目录下执行）
-              cd ./wrt/package/
-              bash $GITHUB_WORKSPACE/Patches/packages.sh
-              cd $GITHUB_WORKSPACE
-              # 细粒度补丁
-              for f in $GITHUB_WORKSPACE/Patches/patches.d/*.sh; do bash "$f"; done
-              # 追加自定义配置覆盖
-              cat $GITHUB_WORKSPACE/Config/CUSTOM.txt >> ./wrt/.config
-              # defconfig 和 clean 在所有 patch 之后执行
-              cd ./wrt/ && make defconfig -j$(nproc) && make clean -j$(nproc)
-
-          - name: Inject Prebuilt Binaries
-            run: |
-              bash $GITHUB_WORKSPACE/Patches/inject-binaries.sh
-
-          - name: Download Packages"""
-
-          content = content.replace(old_download, new_steps)
-
-          encoded = base64.b64encode(content.encode()).decode()
-          print(json.dumps({"message": "chore: apply QWRT custom steps to WRT-CORE.yml after upstream sync", "content": encoded, "sha": sys.argv[2]}))
-          PYEOF
-
-          python3 /tmp/patch_wrt_core.py /tmp/wrt-core-upstream.yml "$WRT_SHA" > /tmp/wrt-core-patch.json
-
-          RESULT=$(gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml \
-            -X PUT \
-            --input /tmp/wrt-core-patch.json \
-            --jq '.commit.sha' 2>/dev/null)
-
-          if [ -n "$RESULT" ]; then
-            echo "WRT-CORE.yml custom steps restored: ${RESULT:0:8}"
-          else
-            echo "ERROR: Failed to restore WRT-CORE.yml modifications"
-            exit 1
-          fi
-
-          # Auto-Sync-Upstream.yml 需要通过 Git Data API 恢复（GITHUB_TOKEN 无法推送 workflow 文件）
-          # 如果被上游重置删除，需要手动恢复
-
-      - name: Trigger Build
-        if: steps.check.outputs.has_updates == 'true'
+      - name: Disable upstream's auto-trigger workflows
+        if: steps.merge.outputs.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run QCA-6.12-VIKINGYFY.yml --repo yefeng8771/OpenWRT-CI
-          echo "Build triggered"
+          # 这些是上游自带、会在 Auto-Clean 完成时自动跑全设备矩阵的工作流，
+          # 我们用 QWRT.yml 接管，所以同步成功后强制 disable（幂等）。
+          for wf in QCA-6.12-VIKINGYFY.yml QCA-6.12-LiBwrt.yml WRT-CORE-TEST.yml; do
+            gh workflow disable "$wf" --repo ${{ github.repository }} 2>/dev/null || true
+          done
+
+      - name: Trigger QWRT build
+        if: steps.merge.outputs.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run QWRT.yml --repo ${{ github.repository }}
+          echo "QWRT build triggered"
 
       - name: Summary
+        if: always()
         run: |
-          if [ "${{ steps.check.outputs.has_updates }}" == "true" ]; then
-            echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
-            echo "- Upstream commits behind: ${{ steps.check.outputs.behind }}" >> $GITHUB_STEP_SUMMARY
-            echo "- Main branch force-reset to upstream HEAD via Git Data API" >> $GITHUB_STEP_SUMMARY
-            echo "- Custom files (Patches/, Config/CUSTOM.txt) preserved" >> $GITHUB_STEP_SUMMARY
-            echo "- WRT-CORE.yml modifications re-applied" >> $GITHUB_STEP_SUMMARY
-            echo "- Build triggered" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## No Updates" >> $GITHUB_STEP_SUMMARY
-            echo "Already in sync with upstream" >> $GITHUB_STEP_SUMMARY
-          fi
+          {
+            echo "## Auto-Sync Summary"
+            echo "- Upstream:    \`${UPSTREAM_OWNER}/${UPSTREAM_REPO}@${UPSTREAM_BRANCH}\`"
+            echo "- Upstream SHA: ${{ steps.cmp.outputs.upstream_sha }}"
+            echo "- ahead/behind: ${{ steps.cmp.outputs.ahead }} / ${{ steps.cmp.outputs.behind }}"
+            echo "- Merge result: ${{ steps.merge.outputs.result }}"
+            [ -n "${{ steps.merge.outputs.merge_sha }}" ] && echo "- Merge commit: ${{ steps.merge.outputs.merge_sha }}"
+          } >> $GITHUB_STEP_SUMMARY
