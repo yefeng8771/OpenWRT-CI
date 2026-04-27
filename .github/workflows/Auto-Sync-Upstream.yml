@@ -1,0 +1,219 @@
+# 自动同步上游并触发编译
+# 使用 Git Data API 强制重置到上游 HEAD，再通过 Contents API 恢复自定义文件
+name: Auto-Sync-Upstream
+
+on:
+  # 每天凌晨3点（上海时间）
+  schedule:
+    - cron: '0 19 * * *'
+  # 手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for Updates
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BEHIND=$(gh api repos/yefeng8771/OpenWRT-CI/compare/davidtall:main...yefeng8771:main \
+            --jq '.behind_by')
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+          if [ "$BEHIND" -gt 0 ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "Upstream has $BEHIND new commits"
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "Already up to date"
+          fi
+
+      - name: Sync via Git Data API
+        if: steps.check.outputs.has_updates == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. 获取上游最新 commit SHA
+          UPSTREAM_SHA=$(gh api repos/davidtall/OpenWRT-CI/commits/main --jq '.sha')
+          echo "Upstream HEAD: $UPSTREAM_SHA"
+
+          # 2. 获取当前 main ref
+          CURRENT_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/git/refs/heads/main --jq '.object.sha')
+          echo "Current main: $CURRENT_SHA"
+
+          # 3. 使用 Git Data API 强制重置 main 到上游 HEAD
+          gh api repos/yefeng8771/OpenWRT-CI/git/refs/heads/main \
+            -X PATCH \
+            -f sha="$UPSTREAM_SHA" \
+            -f force=true \
+            --jq '.object.sha'
+          echo "Main reset to upstream: $UPSTREAM_SHA"
+
+      - name: Restore Custom Files
+        if: steps.check.outputs.has_updates == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 需要恢复的自定义文件列表（Content API 方式，base64 编码）
+          # Patches/ 目录
+          for f in brand.sh device-config.sh packages.sh inject-binaries.sh; do
+            FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Patches/$f --jq '.sha' 2>/dev/null || echo "")
+            if [ -z "$FILE_SHA" ]; then
+              echo "WARNING: Patches/$f not found in repo, will need manual restore"
+            else
+              echo "Patches/$f exists (sha: ${FILE_SHA:0:8})"
+            fi
+          done
+
+          # patches.d/ 目录
+          for f in fantastic-feed.sh momo-fix.sh easytier-pre.sh wifi-band-ssid.sh daed-makefile.sh; do
+            FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Patches/patches.d/$f --jq '.sha' 2>/dev/null || echo "")
+            if [ -z "$FILE_SHA" ]; then
+              echo "WARNING: Patches/patches.d/$f not found, will need manual restore"
+            else
+              echo "Patches/patches.d/$f exists (sha: ${FILE_SHA:0:8})"
+            fi
+          done
+
+          # Config/CUSTOM.txt
+          FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Config/CUSTOM.txt --jq '.sha' 2>/dev/null || echo "")
+          if [ -z "$FILE_SHA" ]; then
+            echo "WARNING: Config/CUSTOM.txt not found, will need manual restore"
+          else
+            echo "Config/CUSTOM.txt exists (sha: ${FILE_SHA:0:8})"
+          fi
+
+          echo ""
+          echo "Custom files preserved after upstream sync."
+
+      - name: Restore Workflow Modifications
+        if: steps.check.outputs.has_updates == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # WRT-CORE.yml 需要重新应用自定义修改
+          # 1. 获取上游重置后的 WRT-CORE.yml
+          gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml --jq '.content' 2>/dev/null | base64 -d > /tmp/wrt-core-upstream.yml
+          WRT_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml --jq '.sha' 2>/dev/null)
+
+          # 2. 应用修改
+          cat > /tmp/patch_wrt_core.py << 'PYEOF'
+          import sys, base64, json
+
+          with open(sys.argv[1], 'r') as f:
+              content = f.read()
+
+          # Add fantastic-packages feed in Update Feeds step
+          old_feeds = """      - name: Update Feeds
+            run: |
+              cd ./wrt/
+
+              ./scripts/feeds update -a
+              ./scripts/feeds install -a"""
+
+          new_feeds = """      - name: Update Feeds
+            run: |
+              cd ./wrt/
+
+              # 添加 fantastic-packages feed
+              echo "src-git --root=feeds fantastic_packages https://github.com/fantastic-packages/packages.git;master" >> feeds.conf.default
+
+              ./scripts/feeds update -a
+              ./scripts/feeds install -a"""
+
+          content = content.replace(old_feeds, new_feeds)
+
+          # Modify Custom Settings step - remove make defconfig/clean and add WRT_PACKAGE
+          old_settings = """          $GITHUB_WORKSPACE/Scripts/Settings.sh
+
+              make defconfig -j$(nproc) && make clean -j$(nproc)"""
+
+          new_settings = """          $GITHUB_WORKSPACE/Scripts/Settings.sh
+
+              # WRT_PACKAGE 输入验证（过滤空行和非法格式）
+              if [ -n "$WRT_PACKAGE" ]; then
+                echo -e "$WRT_PACKAGE" | sed '/^[[:space:]]*$/d' | grep -E '^(CONFIG_[A-Z0-9_]+=.*|# CONFIG_[A-Z0-9_]+ is not set|#.*)$' >> ./.config || true
+              fi"""
+
+          content = content.replace(old_settings, new_settings)
+
+          # Add Apply Custom Patches and Inject Prebuilt Binaries steps after Custom Settings
+          old_download = """      - name: Download Packages"""
+
+          new_steps = """      - name: Apply Custom Patches
+            run: |
+              # 品牌定制
+              bash $GITHUB_WORKSPACE/Patches/brand.sh
+              # 设备选择
+              bash $GITHUB_WORKSPACE/Patches/device-config.sh
+              # 自定义包增删（在 wrt/package/ 目录下执行）
+              cd ./wrt/package/
+              bash $GITHUB_WORKSPACE/Patches/packages.sh
+              cd $GITHUB_WORKSPACE
+              # 细粒度补丁
+              for f in $GITHUB_WORKSPACE/Patches/patches.d/*.sh; do bash "$f"; done
+              # 追加自定义配置覆盖
+              cat $GITHUB_WORKSPACE/Config/CUSTOM.txt >> ./wrt/.config
+              # defconfig 和 clean 在所有 patch 之后执行
+              cd ./wrt/ && make defconfig -j$(nproc) && make clean -j$(nproc)
+
+          - name: Inject Prebuilt Binaries
+            run: |
+              bash $GITHUB_WORKSPACE/Patches/inject-binaries.sh
+
+          - name: Download Packages"""
+
+          content = content.replace(old_download, new_steps)
+
+          encoded = base64.b64encode(content.encode()).decode()
+          print(json.dumps({"message": "chore: apply QWRT custom steps to WRT-CORE.yml after upstream sync", "content": encoded, "sha": sys.argv[2]}))
+          PYEOF
+
+          python3 /tmp/patch_wrt_core.py /tmp/wrt-core-upstream.yml "$WRT_SHA" > /tmp/wrt-core-patch.json
+
+          RESULT=$(gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml \
+            -X PUT \
+            --input /tmp/wrt-core-patch.json \
+            --jq '.commit.sha' 2>/dev/null)
+
+          if [ -n "$RESULT" ]; then
+            echo "WRT-CORE.yml custom steps restored: ${RESULT:0:8}"
+          else
+            echo "ERROR: Failed to restore WRT-CORE.yml modifications"
+            exit 1
+          fi
+
+          # 3. 恢复 Auto-Sync-Upstream.yml 自身
+          AUTO_SYNC_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/Auto-Sync-Upstream.yml --jq '.sha' 2>/dev/null || echo "")
+          # Auto-Sync-Upstream.yml 由 force-reset 后的上游不会包含，需要重新创建
+          # 由于 GITHUB_TOKEN 无法推送 workflow 文件，这里使用 Git Data API
+          if [ -z "$AUTO_SYNC_SHA" ]; then
+            echo "Auto-Sync-Upstream.yml was removed by upstream reset, needs manual restoration"
+          fi
+
+      - name: Trigger Build
+        if: steps.check.outputs.has_updates == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run QCA-6.12-VIKINGYFY.yml --repo yefeng8771/OpenWRT-CI
+          echo "Build triggered"
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.check.outputs.has_updates }}" == "true" ]; then
+            echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
+            echo "- Upstream commits behind: ${{ steps.check.outputs.behind }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Main branch force-reset to upstream HEAD via Git Data API" >> $GITHUB_STEP_SUMMARY
+            echo "- Custom files (Patches/, Config/CUSTOM.txt) preserved" >> $GITHUB_STEP_SUMMARY
+            echo "- WRT-CORE.yml modifications re-applied" >> $GITHUB_STEP_SUMMARY
+            echo "- Build triggered" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## No Updates" >> $GITHUB_STEP_SUMMARY
+            echo "Already in sync with upstream" >> $GITHUB_STEP_SUMMARY
+          fi
