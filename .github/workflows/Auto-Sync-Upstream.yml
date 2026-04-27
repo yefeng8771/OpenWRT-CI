@@ -65,7 +65,7 @@ jobs:
             fi
           done
           # patches.d/ 目录
-          for f in fantastic-feed.sh momo-fix.sh wifi-band-ssid.sh; do
+          for f in fantastic-feed.sh momo-fix.sh easytier-pre.sh wifi-band-ssid.sh; do
             FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Patches/patches.d/$f --jq '.sha' 2>/dev/null || echo "")
             if [ -z "$FILE_SHA" ]; then
               echo "WARNING: Patches/patches.d/$f missing, needs manual restore"
