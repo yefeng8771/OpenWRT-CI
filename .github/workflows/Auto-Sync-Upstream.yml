@@ -21,11 +21,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 通过 GitHub API 比较 fork 和上游的差异
-          BEHIND=$(gh api repos/davidtall/OpenWRT-CI/compare/davidtall:main...yefeng8771:main \
+          BEHIND=$(gh api repos/yefeng8771/OpenWRT-CI/compare/davidtall:main...yefeng8771:main \
             --jq '.behind_by')
           echo "behind=$BEHIND" >> $GITHUB_OUTPUT
-
           if [ "$BEHIND" -gt 0 ]; then
             echo "has_updates=true" >> $GITHUB_OUTPUT
             echo "Upstream has $BEHIND new commits"
@@ -34,73 +32,99 @@ jobs:
             echo "Already up to date"
           fi
 
-      - name: Sync via GitHub API
+      - name: Sync Upstream Files
         if: steps.check.outputs.has_updates == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 使用 GitHub Merge API 直接合并，无需 git push，绕过 workflow 权限限制
-          # 这个 API 合并不需要 workflows 权限
-          RESULT=$(gh api repos/yefeng8771/OpenWRT-CI/merges \
-            -X POST \
-            -f base="main" \
-            -f head="davidtall:main" \
-            -f commit_message="chore: auto-sync upstream (davidtall/OpenWRT-CI)" \
-            2>&1) || true
+          # 获取上游变更的文件列表
+          CHANGED_FILES=$(gh api repos/davidtall/OpenWRT-CI/compare/davidtall:main...yefeng8771:main \
+            --jq '.files[] | "\(.filename) \(.status) \(.sha // empty)"')
 
-          if echo "$RESULT" | grep -q "Conflict"; then
-            echo "::warning::Merge conflict via API, falling back to manual resolve..."
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No file-level changes detected"
+            exit 0
+          fi
 
-            # 需要手动处理冲突：checkout，merge，解决冲突，用 API 逐文件提交
-            # 由于 GITHUB_TOKEN 无法 push workflow 文件变更，我们只同步非 workflow 文件
-            echo "Conflicts detected, attempting selective sync..."
+          SYNCED=0
+          SKIPPED=0
 
-            # 获取上游所有变更文件
-            CHANGED_FILES=$(gh api repos/davidtall/OpenWRT-CI/compare/davidtall:main...yefeng8771:main \
-              --jq '.files[] | select(.status != "removed") | .filename')
+          while IFS=' ' read -r FILE STATUS UPSTREAM_SHA; do
+            # 跳过 Patches/ 目录（我们的自定义文件）
+            if [[ "$FILE" == Patches/* ]]; then
+              echo "Skip (our custom): $FILE"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
 
-            for FILE in $CHANGED_FILES; do
-              # 跳过 workflow 文件
-              if [[ "$FILE" == .github/workflows/* ]]; then
-                echo "Skipping workflow file: $FILE (requires manual sync)"
+            # 跳过 workflow 文件（GITHUB_TOKEN 无权限写入）
+            if [[ "$FILE" == .github/workflows/* ]]; then
+              echo "Skip (workflow permission): $FILE"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            # 跳过 Config/CUSTOM.txt（我们的自定义）
+            if [[ "$FILE" == Config/CUSTOM.txt ]]; then
+              echo "Skip (our custom): $FILE"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            if [ "$STATUS" = "removed" ]; then
+              # 删除文件
+              FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/"$FILE" --jq '.sha' 2>/dev/null || echo "")
+              if [ -n "$FILE_SHA" ]; then
+                gh api repos/yefeng8771/OpenWRT-CI/contents/"$FILE" \
+                  -X DELETE \
+                  -f message="sync: remove $FILE (upstream removed)" \
+                  -f sha="$FILE_SHA" \
+                  --jq '.commit.sha' 2>/dev/null || echo "  Failed to delete: $FILE"
+                echo "Removed: $FILE"
+                SYNCED=$((SYNCED + 1))
+              fi
+            else
+              # 获取上游文件内容
+              UPSTREAM_CONTENT=$(gh api repos/davidtall/OpenWRT-CI/contents/"$FILE" --jq '.content' 2>/dev/null || echo "")
+
+              if [ -z "$UPSTREAM_CONTENT" ]; then
+                echo "Skip (no content): $FILE"
                 continue
               fi
 
-              # 获取上游文件内容
+              # 获取当前文件 SHA（如果存在）
               FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/"$FILE" --jq '.sha' 2>/dev/null || echo "")
-              UPSTREAM_CONTENT=$(gh api repos/davidtall/OpenWRT-CI/contents/"$FILE" --jq '.content' 2>/dev/null || echo "")
 
-              if [ -n "$UPSTREAM_CONTENT" ]; then
-                if [ -n "$FILE_SHA" ]; then
-                  # 更新已有文件
-                  gh api repos/yefeng8771/OpenWRT-CI/contents/"$FILE" \
-                    -X PUT \
-                    -f message="sync: update $FILE from upstream" \
-                    -f content="$UPSTREAM_CONTENT" \
-                    -f sha="$FILE_SHA" \
-                    --jq '.commit.sha' 2>/dev/null || echo "  Failed to update: $FILE"
-                else
-                  # 新文件
-                  gh api repos/yefeng8771/OpenWRT-CI/contents/"$FILE" \
-                    -X PUT \
-                    -f message="sync: add $FILE from upstream" \
-                    -f content="$UPSTREAM_CONTENT" \
-                    --jq '.commit.sha' 2>/dev/null || echo "  Failed to add: $FILE"
-                fi
-                echo "Synced: $FILE"
+              if [ -n "$FILE_SHA" ]; then
+                # 更新已有文件
+                gh api repos/yefeng8771/OpenWRT-CI/contents/"$FILE" \
+                  -X PUT \
+                  -f message="sync: update $FILE from upstream" \
+                  -f content="$UPSTREAM_CONTENT" \
+                  -f sha="$FILE_SHA" \
+                  --jq '.commit.sha' 2>/dev/null || echo "  Failed to update: $FILE"
+              else
+                # 新文件
+                gh api repos/yefeng8771/OpenWRT-CI/contents/"$FILE" \
+                  -X PUT \
+                  -f message="sync: add $FILE from upstream" \
+                  -f content="$UPSTREAM_CONTENT" \
+                  --jq '.commit.sha' 2>/dev/null || echo "  Failed to add: $FILE"
               fi
-            done
-          else
-            echo "Merge succeeded: $RESULT"
-          fi
+              echo "Synced: $FILE"
+              SYNCED=$((SYNCED + 1))
+            fi
+          done <<< "$CHANGED_FILES"
+
+          echo ""
+          echo "Synced: $SYNCED files, Skipped: $SKIPPED files"
 
       - name: Trigger Build
         if: steps.check.outputs.has_updates == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sleep 5
-          gh workflow run QCA-6.12-VIKINGYFY.yml
+          gh workflow run QCA-6.12-VIKINGYFY.yml --repo yefeng8771/OpenWRT-CI
           echo "Build triggered"
 
       - name: Summary
@@ -108,7 +132,8 @@ jobs:
           if [ "${{ steps.check.outputs.has_updates }}" == "true" ]; then
             echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
             echo "- Upstream commits behind: ${{ steps.check.outputs.behind }}" >> $GITHUB_STEP_SUMMARY
-            echo "- Synced via GitHub API" >> $GITHUB_STEP_SUMMARY
+            echo "- Files synced via GitHub Contents API" >> $GITHUB_STEP_SUMMARY
+            echo "- Workflow files skipped (requires PAT)" >> $GITHUB_STEP_SUMMARY
             echo "- Build triggered" >> $GITHUB_STEP_SUMMARY
           else
             echo "## No Updates" >> $GITHUB_STEP_SUMMARY
