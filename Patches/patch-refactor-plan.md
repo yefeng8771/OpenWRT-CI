@@ -15,10 +15,11 @@ Patches/
 ├── brand.sh                # 品牌定制
 ├── device-config.sh        # 设备选择覆盖
 ├── packages.sh             # 包增删
-├── inject-binaries.sh      # 二进制注入（sing-box + mosdns + easytier）
+├── inject-binaries.sh      # 二进制注入（sing-box + mosdns）
 ├── patches.d/
 │   ├── fantastic-feed.sh   # fantastic-packages feed
 │   ├── momo-fix.sh         # momo 移除 sing-box 依赖
+│   ├── easytier-pre.sh     # 更新 easytier version.mk 到 prerelease
 │   └── wifi-band-ssid.sh   # WiFi 按频段区分 SSID
 ├── fork-changes-analysis.md
 ├── patch-refactor-plan.md
@@ -30,24 +31,25 @@ Config/
 
 ## 三、二进制注入说明
 
-以下组件不从源码编译，而是在 CI 构建时下载 prerelease/latest 预编译二进制注入：
+**注入方式**（编译时下载，直接放入 files/）：
 
 | 组件 | 来源 | 版本策略 |
 |------|------|----------|
 | sing-box | reF1nd/sing-box-releases | prerelease |
 | mosdns | yyysuo/mosdns | latest release |
-| easytier-core/cli/web | EasyTier/EasyTier | prerelease |
 
-上游 Packages.sh 会 clone easytier 源码包，packages.sh 会将其删除，改由 inject-binaries.sh 注入 prerelease 二进制。
+**版本覆盖方式**（保留上游 Makefile，仅改版本号）：
 
-上游 Packages.sh 也会 clone mosdns 源码包，packages.sh 同样删除，改由 inject-binaries.sh 注入 yyysuo 预编译。
+| 组件 | 上游行为 | QWRT 行为 |
+|------|----------|-----------|
+| easytier | Makefile 下载稳定版二进制 | `easytier-pre.sh` 更新 version.mk 到 prerelease，Makefile 自动下载 prerelease 二进制 |
 
 ## 四、CI 工作流
 
 WRT-CORE.yml 中新增两个 step：
 
 1. **Apply Custom Patches** — 调用 brand.sh → device-config.sh → packages.sh → patches.d/*.sh → 追加 CUSTOM.txt → make defconfig/clean
-2. **Inject Prebuilt Binaries** — 调用 inject-binaries.sh 下载并注入二进制
+2. **Inject Prebuilt Binaries** — 调用 inject-binaries.sh 下载并注入 sing-box + mosdns 二进制
 
 ## 五、自动同步
 
