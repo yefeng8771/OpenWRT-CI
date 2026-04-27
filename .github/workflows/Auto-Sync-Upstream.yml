@@ -8,17 +8,28 @@ on:
   # 手动触发
   workflow_dispatch:
 
-permissions: write-all
+permissions:
+  contents: write
+  actions: write
+  workflows: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate Token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@main
         with:
           fetch-depth: 0
           ref: main
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure Git
         run: |
@@ -56,24 +67,20 @@ jobs:
           set -e
 
           if [ $MERGE_EXIT -ne 0 ]; then
-            echo "::error::Merge conflict detected! Attempting auto-resolve..."
+            echo "::warning::Merge conflict detected, auto-resolving with upstream preference..."
 
-            # 列出冲突文件
             CONFLICTS=$(git diff --name-only --diff-filter=U)
             echo "Conflicting files: $CONFLICTS"
 
             # 对于已外置到 Patches/ 的自定义文件，优先采用上游版本
-            # 因为我们的自定义会在 CI 构建时通过 Patches/ 重新应用
+            # 因为自定义会在 CI 构建时通过 Patches/ 重新应用
             for FILE in $CONFLICTS; do
-              echo "Resolving conflict in $FILE: keeping upstream version (patches will re-apply customizations during build)"
+              echo "Resolving: $FILE -> upstream version"
               git checkout --theirs "$FILE"
               git add "$FILE"
             done
 
-            # 尝试完成 merge
-            git commit --no-edit -m "chore: sync upstream (auto-resolved conflicts with upstream preference)"
-          else
-            echo "Merge succeeded without conflicts"
+            git commit --no-edit -m "chore: sync upstream (auto-resolved conflicts)"
           fi
 
       - name: Push Changes
@@ -84,19 +91,26 @@ jobs:
 
       - name: Trigger Build
         if: steps.check.outputs.has_updates == 'true'
-        run: |
-          # 触发 QCA 编译
-          gh workflow run QCA-6.12-VIKINGYFY.yml
-          echo "Build triggered"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'QCA-6.12-VIKINGYFY.yml',
+              ref: 'main'
+            });
 
       - name: Summary
+        if: steps.check.outputs.has_updates == 'true'
         run: |
-          if [ "${{ steps.check.outputs.has_updates }}" == "true" ]; then
-            echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
-            echo "- Upstream commits behind: ${{ steps.check.outputs.behind }}" >> $GITHUB_STEP_SUMMARY
-            echo "- Merged and pushed to main" >> $GITHUB_STEP_SUMMARY
-            echo "- Build triggered" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## No Updates" >> $GITHUB_STEP_SUMMARY
-            echo "Already in sync with upstream" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Upstream commits merged: ${{ steps.check.outputs.behind }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Changes pushed to main" >> $GITHUB_STEP_SUMMARY
+          echo "- Build triggered" >> $GITHUB_STEP_SUMMARY
+
+      - name: No Updates
+        if: steps.check.outputs.has_updates != 'true'
+        run: |
+          echo "## No Updates" >> $GITHUB_STEP_SUMMARY
+          echo "Already in sync with upstream" >> $GITHUB_STEP_SUMMARY
