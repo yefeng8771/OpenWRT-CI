@@ -157,6 +157,9 @@ jobs:
         run: |
           cd ./wrt/
 
+          # 添加 fantastic-packages feed
+          echo "src-git --root=feeds fantastic_packages https://github.com/fantastic-packages/packages.git;master" >> feeds.conf.default
+
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -176,7 +179,31 @@ jobs:
           
           $GITHUB_WORKSPACE/Scripts/Settings.sh
 
-          make defconfig -j$(nproc) && make clean -j$(nproc)
+          # WRT_PACKAGE 输入验证（过滤空行和非法格式）
+          if [ -n "$WRT_PACKAGE" ]; then
+            echo -e "$WRT_PACKAGE" | sed '/^[[:space:]]*$/d' | grep -E '^(CONFIG_[A-Z0-9_]+=.*|# CONFIG_[A-Z0-9_]+ is not set|#.*)$' >> ./.config || true
+          fi
+
+      - name: Apply Custom Patches
+        run: |
+          # 品牌定制
+          bash $GITHUB_WORKSPACE/Patches/brand.sh
+          # 设备选择
+          bash $GITHUB_WORKSPACE/Patches/device-config.sh
+          # 自定义包增删（在 wrt/package/ 目录下执行）
+          cd ./wrt/package/
+          bash $GITHUB_WORKSPACE/Patches/packages.sh
+          cd $GITHUB_WORKSPACE
+          # 细粒度补丁
+          for f in $GITHUB_WORKSPACE/Patches/patches.d/*.sh; do bash "$f"; done
+          # 追加自定义配置覆盖
+          cat $GITHUB_WORKSPACE/Config/CUSTOM.txt >> ./wrt/.config
+          # defconfig 和 clean 在所有 patch 之后执行
+          cd ./wrt/ && make defconfig -j$(nproc) && make clean -j$(nproc)
+
+      - name: Inject Prebuilt Binaries
+        run: |
+          bash $GITHUB_WORKSPACE/Patches/inject-binaries.sh
 
       - name: Download Packages
         if: env.WRT_TEST != 'true'
@@ -225,7 +252,7 @@ jobs:
             echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV
             echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> $GITHUB_ENV
 
-            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
+            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +  
 
             for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
               EXT=$(basename $FILE | cut -d '.' -f 2-)
