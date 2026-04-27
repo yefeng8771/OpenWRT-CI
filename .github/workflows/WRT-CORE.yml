@@ -153,13 +153,16 @@ jobs:
 
 
 
+      - name: Pre-Feed Patches
+        # 这一阶段的脚本必须在 feeds update 之前跑（用于添加新 feed、修改 feeds.conf 等）
+        run: |
+          for f in $GITHUB_WORKSPACE/Patches/pre-feed/*.sh; do
+            [ -f "$f" ] && bash "$f"
+          done
+
       - name: Update Feeds
         run: |
           cd ./wrt/
-
-          # 添加 fantastic-packages feed
-          echo "src-git --root=feeds fantastic_packages https://github.com/fantastic-packages/packages.git;master" >> feeds.conf.default
-
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 

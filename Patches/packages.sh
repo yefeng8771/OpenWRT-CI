@@ -10,7 +10,16 @@ fi
 cd "$PKG_DIR"
 
 # 删除不需要的插件
-REMOVE_PACKAGES=("homeproxy" "nikki" "openclash" "passwall" "passwall2" "gecoosac" "vnt")
+#   homeproxy/nikki/openclash/passwall*：替代品 daed
+#   gecoosac/vnt：不需要
+#   tailscale/zerotier：组网走 easytier
+#   vlmcsd/ddns-go：不需要
+REMOVE_PACKAGES=(
+    "homeproxy" "nikki" "openclash" "passwall" "passwall2"
+    "gecoosac" "vnt"
+    "tailscale" "zerotier"
+    "vlmcsd" "ddns-go"
+)
 for pkg in "${REMOVE_PACKAGES[@]}"; do
     FOUND=$(find ./ -maxdepth 2 -type d -iname "*$pkg*" 2>/dev/null || true)
     if [ -n "$FOUND" ]; then
