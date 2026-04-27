@@ -26,18 +26,16 @@ OWRT_ARCH=$(grep -m 1 '^CONFIG_TARGET_ARCH_PACKAGES=' .config | cut -d'=' -f2 | 
 case "$OWRT_ARCH" in
     aarch64*|arm64*)
         RELEASE_ARCH=arm64
-        ET_ARCH=aarch64
         ;;
     x86_64|amd64*)
         RELEASE_ARCH=amd64
-        ET_ARCH=x86_64
         ;;
     *)
         echo "[inject] Unsupported arch: $OWRT_ARCH"
         exit 1
         ;;
 esac
-echo "[inject] Target arch: $OWRT_ARCH -> $RELEASE_ARCH (easytier: $ET_ARCH)"
+echo "[inject] Target arch: $OWRT_ARCH -> $RELEASE_ARCH"
 
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -119,53 +117,9 @@ sed -i 's#^CONF=\./config\.yaml#CONF=./config_custom.yaml#' "$TMP_DIR/mosdns.ini
 install -m 0755 "$TMP_DIR/mosdns.init" ./files/etc/init.d/mosdns
 echo "[inject] mosdns init script installed"
 
-# ============ easytier: prerelease 预编译 ============
-echo "[inject] Downloading easytier prerelease for $ET_ARCH..."
-
-ET_API="https://api.github.com/repos/EasyTier/EasyTier/releases"
-ET_URL=$(curl -fsSL \
-    -H "Authorization: Bearer ${GITHUB_TOKEN:-}" \
-    -H 'Accept: application/vnd.github+json' \
-    "$ET_API" | jq -r --arg arch "$ET_ARCH" '
-        [ .[]
-            | select(.draft == false and .prerelease == true)
-            | .assets[]?
-            | select(.name | test("linux-" + $arch + "-v"))
-            | .browser_download_url
-        ][0]
-    ')
-
-if [ -n "$ET_URL" ] && [ "$ET_URL" != "null" ]; then
-    ET_ASSET=$(basename "$ET_URL")
-    curl -fL "$ET_URL" -o "$TMP_DIR/$ET_ASSET"
-    unzip -q "$TMP_DIR/$ET_ASSET" -d "$TMP_DIR/easytier-bin"
-    # 注入 easytier-core 和 easytier-cli
-    ET_CORE=$(find "$TMP_DIR/easytier-bin" -type f -name easytier-core | head -n 1)
-    ET_CLI=$(find "$TMP_DIR/easytier-bin" -type f -name easytier-cli | head -n 1)
-    if [ -n "$ET_CORE" ] && [ -f "$ET_CORE" ]; then
-        install -m 0755 "$ET_CORE" ./files/usr/bin/easytier-core
-        echo "[inject] easytier-core injected"
-    else
-        echo "[inject] WARNING: easytier-core binary not found"
-    fi
-    if [ -n "$ET_CLI" ] && [ -f "$ET_CLI" ]; then
-        install -m 0755 "$ET_CLI" ./files/usr/bin/easytier-cli
-        echo "[inject] easytier-cli injected"
-    fi
-    # 注入 Web 控制台（如果存在）
-    ET_WEB=$(find "$TMP_DIR/easytier-bin" -type f -name easytier-web-embed | head -n 1)
-    if [ -n "$ET_WEB" ] && [ -f "$ET_WEB" ]; then
-        install -m 0755 "$ET_WEB" ./files/usr/bin/easytier-web
-        echo "[inject] easytier-web injected"
-    fi
-    echo "[inject] easytier prerelease injected: $ET_ASSET"
-else
-    echo "[inject] WARNING: easytier prerelease not found for $ET_ARCH"
-fi
-
 # ============ 验证 ============
 echo "[inject] Verification:"
-file ./files/usr/bin/sing-box ./files/usr/bin/mosdns ./files/usr/bin/easytier-core 2>/dev/null || true
+file ./files/usr/bin/sing-box ./files/usr/bin/mosdns 2>/dev/null || true
 ls -la ./files/usr/bin/ ./files/etc/init.d/mosdns 2>/dev/null || true
 
 echo "[inject] Done"
