@@ -15,7 +15,7 @@ if [ -n "$1" ]; then
     export WRT_CONFIG="${filename%.*}"
 else
     # 如果没有传递参数，设置默认值
-    export WRT_CONFIG="IPQ60XX-WIFI"
+    export WRT_CONFIG="IPQ60XX-NOWIFI"
 fi
 
 if [ -n "$2" ]; then
@@ -27,11 +27,11 @@ export GITHUB_WORKSPACE=$(pwd)
 export WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d_%H.%M.%S")
 export WRT_VER=$(echo $WRT_REPO | cut -d '/' -f 5-)-$WRT_BRANCH
 export WRT_TYPE=$(sed -n "1{s/^#//;s/\r$//;p;q}" $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt)
-export WRT_NAME='QWRT'
-export WRT_SSID='QWRT'
+export WRT_NAME='OWRT'
+export WRT_SSID='OWRT'
 export WRT_WORD='12345678'
 export WRT_THEME='argon'
-export WRT_IP='172.16.3.1'
+export WRT_IP='192.168.10.1'
 export WRT_CI='WSL-OpenWRT-CI'
 export WRT_ARCH=$(sed -n 's/.*_DEVICE_\(.*\)_DEVICE_.*/\1/p' $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt | head -n 1)
 export CI_NAME='QCA-6.12-LiBwrt'
@@ -50,9 +50,7 @@ else
   git reset --hard
   git pull
 fi
-#添加 fantastic-packages feed
-echo "src-git --root=feeds fantastic_packages https://github.com/fantastic-packages/packages.git;master" >> feeds.conf.default
-
+#rm -rf feeds
 ./scripts/feeds update -a && ./scripts/feeds install -a
 
 cd package/
