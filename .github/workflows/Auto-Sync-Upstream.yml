@@ -38,20 +38,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. 获取上游最新 commit SHA
           UPSTREAM_SHA=$(gh api repos/davidtall/OpenWRT-CI/commits/main --jq '.sha')
           echo "Upstream HEAD: $UPSTREAM_SHA"
-
-          # 2. 获取当前 main ref
           CURRENT_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/git/refs/heads/main --jq '.object.sha')
           echo "Current main: $CURRENT_SHA"
-
-          # 3. 使用 Git Data API 强制重置 main 到上游 HEAD
           gh api repos/yefeng8771/OpenWRT-CI/git/refs/heads/main \
             -X PATCH \
-            -f sha="$UPSTREAM_SHA" \
-            -f force=true \
-            --jq '.object.sha'
+            --input - <<EOF
+          {"sha":"$UPSTREAM_SHA","force":true}
+          EOF
           echo "Main reset to upstream: $UPSTREAM_SHA"
 
       - name: Restore Custom Files
@@ -59,37 +54,32 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 需要恢复的自定义文件列表（Content API 方式，base64 编码）
+          echo "Verifying custom files after upstream sync..."
           # Patches/ 目录
           for f in brand.sh device-config.sh packages.sh inject-binaries.sh; do
             FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Patches/$f --jq '.sha' 2>/dev/null || echo "")
             if [ -z "$FILE_SHA" ]; then
-              echo "WARNING: Patches/$f not found in repo, will need manual restore"
+              echo "WARNING: Patches/$f missing, needs manual restore"
             else
-              echo "Patches/$f exists (sha: ${FILE_SHA:0:8})"
+              echo "Patches/$f OK"
             fi
           done
-
           # patches.d/ 目录
-          for f in fantastic-feed.sh momo-fix.sh easytier-pre.sh wifi-band-ssid.sh daed-makefile.sh; do
+          for f in fantastic-feed.sh momo-fix.sh wifi-band-ssid.sh; do
             FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Patches/patches.d/$f --jq '.sha' 2>/dev/null || echo "")
             if [ -z "$FILE_SHA" ]; then
-              echo "WARNING: Patches/patches.d/$f not found, will need manual restore"
+              echo "WARNING: Patches/patches.d/$f missing, needs manual restore"
             else
-              echo "Patches/patches.d/$f exists (sha: ${FILE_SHA:0:8})"
+              echo "Patches/patches.d/$f OK"
             fi
           done
-
           # Config/CUSTOM.txt
           FILE_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/Config/CUSTOM.txt --jq '.sha' 2>/dev/null || echo "")
           if [ -z "$FILE_SHA" ]; then
-            echo "WARNING: Config/CUSTOM.txt not found, will need manual restore"
+            echo "WARNING: Config/CUSTOM.txt missing, needs manual restore"
           else
-            echo "Config/CUSTOM.txt exists (sha: ${FILE_SHA:0:8})"
+            echo "Config/CUSTOM.txt OK"
           fi
-
-          echo ""
-          echo "Custom files preserved after upstream sync."
 
       - name: Restore Workflow Modifications
         if: steps.check.outputs.has_updates == 'true'
@@ -97,11 +87,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # WRT-CORE.yml 需要重新应用自定义修改
-          # 1. 获取上游重置后的 WRT-CORE.yml
           gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml --jq '.content' 2>/dev/null | base64 -d > /tmp/wrt-core-upstream.yml
           WRT_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/WRT-CORE.yml --jq '.sha' 2>/dev/null)
 
-          # 2. 应用修改
           cat > /tmp/patch_wrt_core.py << 'PYEOF'
           import sys, base64, json
 
@@ -142,7 +130,7 @@ jobs:
 
           content = content.replace(old_settings, new_settings)
 
-          # Add Apply Custom Patches and Inject Prebuilt Binaries steps after Custom Settings
+          # Add Apply Custom Patches and Inject Prebuilt Binaries steps
           old_download = """      - name: Download Packages"""
 
           new_steps = """      - name: Apply Custom Patches
@@ -188,13 +176,8 @@ jobs:
             exit 1
           fi
 
-          # 3. 恢复 Auto-Sync-Upstream.yml 自身
-          AUTO_SYNC_SHA=$(gh api repos/yefeng8771/OpenWRT-CI/contents/.github/workflows/Auto-Sync-Upstream.yml --jq '.sha' 2>/dev/null || echo "")
-          # Auto-Sync-Upstream.yml 由 force-reset 后的上游不会包含，需要重新创建
-          # 由于 GITHUB_TOKEN 无法推送 workflow 文件，这里使用 Git Data API
-          if [ -z "$AUTO_SYNC_SHA" ]; then
-            echo "Auto-Sync-Upstream.yml was removed by upstream reset, needs manual restoration"
-          fi
+          # Auto-Sync-Upstream.yml 需要通过 Git Data API 恢复（GITHUB_TOKEN 无法推送 workflow 文件）
+          # 如果被上游重置删除，需要手动恢复
 
       - name: Trigger Build
         if: steps.check.outputs.has_updates == 'true'
