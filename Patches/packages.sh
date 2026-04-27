@@ -8,6 +8,7 @@ if [ ! -d "$PKG_DIR" ]; then
     exit 0
 fi
 cd "$PKG_DIR"
+# 删除不需要的插件
 REMOVE_PACKAGES=("homeproxy" "nikki" "openclash" "passwall" "passwall2" "gecoosac" "vnt")
 for pkg in "${REMOVE_PACKAGES[@]}"; do
     FOUND=$(find ./ -maxdepth 2 -type d -iname "*$pkg*" 2>/dev/null || true)
@@ -15,6 +16,7 @@ for pkg in "${REMOVE_PACKAGES[@]}"; do
         echo "$FOUND" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed: $dir"; done
     fi
 done
+# 新增插件
 if [ ! -d "natmapt" ]; then
     git clone --depth=1 --single-branch --branch master "https://github.com/muink/openwrt-natmapt.git" natmapt-tmp
     mv -f natmapt-tmp natmapt; echo "[packages] Added: natmapt"
@@ -23,18 +25,16 @@ if [ ! -d "luci-app-natmapt" ]; then
     git clone --depth=1 --single-branch --branch master "https://github.com/muink/luci-app-natmapt.git" luci-app-natmapt
     echo "[packages] Added: luci-app-natmapt"
 fi
-if [ ! -d "luci-app-lucky" ]; then
-    git clone --depth=1 --single-branch --branch main "https://github.com/sirpdboy/luci-app-lucky.git" luci-app-lucky
-    echo "[packages] Added: luci-app-lucky"
-fi
 if [ ! -d "luci-app-tinyfilemanager" ]; then
     git clone --depth=1 --single-branch --branch master "https://github.com/muink/luci-app-tinyfilemanager.git" luci-app-tinyfilemanager
     echo "[packages] Added: luci-app-tinyfilemanager"
 fi
+# 删除 mosdns 源码包（改用二进制注入）
 MOSDNS_DIRS=$(find ./ -maxdepth 2 -type d -iname "*mosdns*" 2>/dev/null || true)
 if [ -n "$MOSDNS_DIRS" ]; then
     echo "$MOSDNS_DIRS" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed mosdns: $dir"; done
 fi
+# daed Makefile 补丁
 if [ -d "luci-app-daed/daed" ] && [ -f "$WORKSPACE/patches/daed/Makefile" ]; then
     rm -rf luci-app-daed/daed/Makefile
     cp -r "$WORKSPACE/patches/daed/Makefile" luci-app-daed/daed/
