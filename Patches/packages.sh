@@ -10,12 +10,13 @@ fi
 cd "$PKG_DIR"
 
 # 删除不需要的插件
-#   homeproxy/nikki/openclash/passwall*：替代品 daed
+#   代理栈只保留裸核 sing-box + easytier，移除额外包装层和重复方案
 #   gecoosac/vnt：不需要
 #   tailscale/zerotier：组网走 easytier
 #   vlmcsd/ddns-go：不需要
 REMOVE_PACKAGES=(
     "homeproxy" "nikki" "openclash" "passwall" "passwall2"
+    "momo" "mosdns" "daed"
     "gecoosac" "vnt"
     "tailscale" "zerotier"
     "vlmcsd" "ddns-go"
@@ -26,12 +27,6 @@ for pkg in "${REMOVE_PACKAGES[@]}"; do
         echo "$FOUND" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed: $dir"; done
     fi
 done
-
-# 删除 mosdns 源码包（改用 yyysuo 预编译二进制注入）
-MOSDNS_DIRS=$(find ./ -maxdepth 2 -type d -iname "*mosdns*" 2>/dev/null || true)
-if [ -n "$MOSDNS_DIRS" ]; then
-    echo "$MOSDNS_DIRS" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed mosdns: $dir"; done
-fi
 
 # 新增插件
 if [ ! -d "natmapt" ]; then

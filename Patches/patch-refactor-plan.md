@@ -1,56 +1,57 @@
-# OpenWRT-CI Patch 重构方案
+# Patch 重构计划（当前版）
 
-## 一、核心思路
+## 1. 目标
 
-将所有 fork 自定义改动外置为独立的 patch 脚本和配置文件，使得：
+把 fork 差异收敛成最少的几个稳定入口：
 
-1. **主分支可以无损同步上游** — Patches/ 不在上游中，不会冲突
-2. **自定义逻辑集中管理** — 所有品牌定制、功能增强都在 `Patches/` 目录下
-3. **上游更新只需解决 patch 兼容性** — 不再逐文件手动解决冲突
+- `Config/CUSTOM.txt`
+- `Patches/packages.sh`
+- `Patches/patches.d/easytier-pre.sh`
+- `Patches/inject-binaries.sh`
+- `files/`
+- 可选的 pre-feed patch（仅在确实需要新增 feed 时再引入）
 
-## 二、目录结构
+## 2. 当前建议结构
 
-```
+```text
 Patches/
-├── brand.sh                # 品牌定制
-├── device-config.sh        # 设备选择覆盖
-├── packages.sh             # 包增删
-├── inject-binaries.sh      # 二进制注入（sing-box + mosdns）
-├── patches.d/
-│   ├── fantastic-feed.sh   # fantastic-packages feed
-│   ├── momo-fix.sh         # momo 移除 sing-box 依赖
-│   ├── easytier-pre.sh     # 更新 easytier version.mk 到 prerelease
-│   └── wifi-band-ssid.sh   # WiFi 按频段区分 SSID
-├── fork-changes-analysis.md
-├── patch-refactor-plan.md
-└── mosdns-guide.md
+├── brand.sh
+├── device-config.sh
+├── packages.sh
+├── inject-binaries.sh          # 只注入 sing-box
+└── patches.d/
+    └── easytier-pre.sh         # 只负责 EasyTier prerelease
 
 Config/
-└── CUSTOM.txt              # 自定义配置覆盖
+└── CUSTOM.txt
+
+files/
+└── etc/
+    ├── init.d/sing-box
+    ├── nftables.d/40-singbox-tproxy.nft
+    ├── sing-box/config.json
+    └── uci-defaults/99-qwrt-defaults
 ```
 
-## 三、二进制注入说明
+## 3. 重构原则
 
-**注入方式**（编译时下载，直接放入 files/）：
+### 原则一：二进制注入只留 sing-box
 
-| 组件 | 来源 | 版本策略 |
-|------|------|----------|
-| sing-box | reF1nd/sing-box-releases | prerelease |
-| mosdns | yyysuo/mosdns | latest release |
+不要再把 mosdns 之类额外组件塞回 `inject-binaries.sh`。
 
-**版本覆盖方式**（保留上游 Makefile，仅改版本号）：
+### 原则二：EasyTier 不接管构建链
 
-| 组件 | 上游行为 | QWRT 行为 |
-|------|----------|-----------|
-| easytier | Makefile 下载稳定版二进制 | `easytier-pre.sh` 更新 version.mk 到 prerelease，Makefile 自动下载 prerelease 二进制 |
+只改版本，不改它的主构建逻辑。
 
-## 四、CI 工作流
+### 原则三：默认行为最小化
 
-WRT-CORE.yml 中新增两个 step：
+不要在 `uci-defaults` 里做太多网络栈接管动作。
 
-1. **Apply Custom Patches** — 调用 brand.sh → device-config.sh → packages.sh → patches.d/*.sh → 追加 CUSTOM.txt → make defconfig/clean
-2. **Inject Prebuilt Binaries** — 调用 inject-binaries.sh 下载并注入 sing-box + mosdns 二进制
+### 原则四：失败不阻塞主线
 
-## 五、自动同步
+像 WiFi SSID 分频段这种"锦上添花"能力，如果不稳定，就不应该继续占主线复杂度预算。
 
-Auto-Sync-Upstream.yml：Git Data API 强制重置 main → 上游 HEAD，再恢复自定义文件和 WRT-CORE.yml 修改，触发编译。
+### 原则五：不要预置无实际消费的 feed
+
+只有当当前仓库真的要编译某个 feed 里的包时，才引入对应 pre-feed patch。
+如果仓库本身没有消费 `fantastic-packages` 的包，就不要把它写进主线。

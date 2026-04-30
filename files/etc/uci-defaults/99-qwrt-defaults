@@ -1,51 +1,21 @@
 #!/bin/sh
 # 99-qwrt-defaults — 首启动一次性配置
 #
-# uci-defaults 脚本会在固件首次启动时执行一次，成功后被自动删除。
-# 在这里完成：
-#   1. dnsmasq 关掉自身解析、转发到 mosdns:5335（mosdns 通过 ebpf 重定向接管 53）
-#   2. LAN IPv6 配为 SLAAC + EUI64，不下发 IPv6 DNS（强制走 IPv4 网关 → mosdns）
-#   3. WAN 关闭 peerdns
-#   4. 服务默认状态：mosdns=enabled, sing-box=disabled, easytier=disabled
-#      （需要用户填入真实节点/网络密钥后再开启）
+# 当前策略：尽量保持默认系统行为，不主动接管 DNS，
+# 只处理服务默认状态，避免用户首次开机就被复杂代理栈卡住。
 
 set -e
 
-# ============ 1. dnsmasq 改为纯转发器 ============
-uci -q delete dhcp.@dnsmasq[0].server || true
-uci add_list dhcp.@dnsmasq[0].server="127.0.0.1#5335"
-uci set dhcp.@dnsmasq[0].noresolv='1'
-uci set dhcp.@dnsmasq[0].domainneeded='1'
-uci set dhcp.@dnsmasq[0].rebind_protection='0'   # mosdns 已自处理，避免误杀
-
-# ============ 2. LAN IPv6 配置 ============
-uci set network.lan.ip6assign='60'
-uci set network.lan.ip6hint=''
-# 关键：不下发 IPv6 DNS，强制客户端用 IPv4 网关查 DNS
-uci set dhcp.lan.ra='server'
-uci set dhcp.lan.dhcpv6='disabled'
-uci set dhcp.lan.ndp='disabled'
-uci set dhcp.lan.ra_default='1'
-# 移除 IPv6 DNS 选项（防止上游 24.10 默认下发）
-uci -q delete dhcp.lan.dns || true
-uci set dhcp.lan.ra_dns='0'
-
-# ============ 3. WAN 不用对方 DNS ============
-uci set network.wan.peerdns='0'
-[ -n "$(uci -q get network.wan6 2>/dev/null)" ] && uci set network.wan6.peerdns='0' || true
-
-# ============ 4. 服务默认状态 ============
-# mosdns：默认启用（首屏 DNS 必须可用）
-[ -x /etc/init.d/mosdns ] && /etc/init.d/mosdns enable
-
-# sing-box：默认 disabled（用户得先填节点）
+# sing-box：默认 disabled（用户填入真实节点后再启用）
 [ -x /etc/init.d/sing-box ] && /etc/init.d/sing-box disable
 
-# momo：默认 disabled（裸核 sing-box 与 momo 不能同时跑）
-[ -x /etc/init.d/momo ] && /etc/init.d/momo disable
-
-# easytier：默认 disabled（用户得先填网络密钥）
+# easytier：默认 disabled（用户填入网络密钥后再启用）
 [ -x /etc/init.d/easytier ] && /etc/init.d/easytier disable
+
+# 若历史残留服务存在，也统一关掉，保持 sing-box 裸核运行
+[ -x /etc/init.d/momo ] && /etc/init.d/momo disable
+[ -x /etc/init.d/mosdns ] && /etc/init.d/mosdns disable
+[ -x /etc/init.d/daed ] && /etc/init.d/daed disable
 
 uci commit
 exit 0

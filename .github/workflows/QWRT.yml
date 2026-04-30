@@ -14,36 +14,34 @@ on:
         required: false
         type: string
       TEST:
-        description: '仅输出配置文件，不编译固件。'
-        default: 'false'
+        description: "仅输出配置文件，不编译固件。"
+        default: "false"
         required: false
         type: boolean
 
-permissions: write-all
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: qwrt-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   config:
-    name: QWRT-${{matrix.CONFIG}}
-    strategy:
-      fail-fast: false
-      matrix:
-        # 仅编译 IPQ60XX-WIFI；具体设备由 Patches/device-config.sh 收敛到 jdcloud_re-cs-02
-        CONFIG: [IPQ60XX-WIFI]
-        SOURCE: [VIKINGYFY/immortalwrt]
-        BRANCH: [main]
-
+    name: QWRT-IPQ60XX-WIFI
     uses: ./.github/workflows/WRT-CORE.yml
     with:
-      WRT_CONFIG: ${{matrix.CONFIG}}
-      WRT_THEME:  argon
-      WRT_NAME:   QWRT
-      WRT_SSID:   QWRT
-      WRT_WORD:   '12345678'
-      WRT_IP:     172.16.3.1
-      WRT_PW:     '无'
-      WRT_REPO:   https://github.com/${{matrix.SOURCE}}.git
-      WRT_BRANCH: ${{matrix.BRANCH}}
-      WRT_SOURCE: ${{matrix.SOURCE}}
+      WRT_CONFIG: IPQ60XX-WIFI
+      WRT_THEME: argon
+      WRT_NAME: QWRT
+      WRT_SSID: QWRT
+      WRT_WORD: "12345678"
+      WRT_IP: 172.16.3.1
+      WRT_PW: "无"
+      WRT_REPO: https://github.com/VIKINGYFY/immortalwrt.git
+      WRT_BRANCH: main
+      WRT_SOURCE: VIKINGYFY/immortalwrt
       WRT_PACKAGE: ${{inputs.PACKAGE}}
-      WRT_TEST:   ${{inputs.TEST}}
-      CI_NAME:    ${{github.workflow}}
+      WRT_TEST: ${{inputs.TEST}}
+      CI_NAME: ${{github.workflow}}

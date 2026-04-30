@@ -1,14 +1,11 @@
 #!/bin/bash
 # inject-binaries.sh — 下载并注入预编译二进制到 wrt/files/
 #
-# 注入项：
-#   /usr/bin/sing-box        ← reF1nd/sing-box-releases prerelease (linux-<arch>-musl)
-#   /usr/bin/mosdns          ← yyysuo/mosdns latest
-#   /etc/mosdns/*            ← yyysuo/firetv 配置包
-#   /etc/init.d/mosdns       ← yyysuo/mosdns 仓库的 openwrt init（CONF 路径改为 config_custom.yaml）
+# 当前仅注入：
+#   /usr/bin/sing-box  ← reF1nd/sing-box-releases prerelease (linux-<arch>-musl)
 #
-# 框架文件（init.d/sing-box, sing-box config, nft 规则, uci-defaults）由仓库的
-# files/ 目录提供，会先于本脚本被 cp -a 进 wrt/files/。
+# easytier 不走注入流程，保持上游构建方式，只通过 patches.d/easytier-pre.sh
+# 把 version.mk 更新到最新 prerelease。
 #
 # 用法: bash inject-binaries.sh [WORK_DIR]
 #   WORK_DIR: wrt 构建目录（默认 ./wrt）
@@ -27,10 +24,10 @@ if [ -d "$WORKSPACE/files" ]; then
     cp -a "$WORKSPACE/files/." ./files/
     echo "[inject] Merged custom files/ from repo"
 fi
-mkdir -p ./files/usr/bin ./files/etc/init.d ./files/etc/mosdns
+mkdir -p ./files/usr/bin ./files/etc/init.d
 
 # 2) 架构检测：覆盖常见 OpenWrt CONFIG_TARGET_ARCH_PACKAGES 取值
-OWRT_ARCH=$(grep -m 1 '^CONFIG_TARGET_ARCH_PACKAGES=' .config | cut -d'=' -f2 | tr -d "\"")
+OWRT_ARCH=$(grep -m 1 '^CONFIG_TARGET_ARCH_PACKAGES=' .config | cut -d'=' -f2 | tr -d '"')
 case "$OWRT_ARCH" in
     aarch64*|arm64*)        RELEASE_ARCH=arm64 ;;
     x86_64|amd64*)          RELEASE_ARCH=amd64 ;;
@@ -44,6 +41,7 @@ case "$OWRT_ARCH" in
         exit 1
         ;;
 esac
+
 echo "[inject] Target arch: $OWRT_ARCH -> $RELEASE_ARCH"
 
 TMP_DIR=$(mktemp -d)
@@ -83,59 +81,9 @@ else
     echo "[inject] WARNING: sing-box prerelease not found for $RELEASE_ARCH"
 fi
 
-# ============ mosdns: yyysuo 预编译 ============
-echo "[inject] Downloading mosdns binary for $RELEASE_ARCH..."
-
-MOSDNS_URL=$(curl -fsSL "${GH_HEADERS[@]}" \
-    "https://api.github.com/repos/yyysuo/mosdns/releases/latest" \
-    | jq -r --arg arch "$RELEASE_ARCH" '
-        .assets[]?
-        | select(.name == ("mosdns-linux-" + $arch + ".zip"))
-        | .browser_download_url' | head -n 1)
-
-if [ -n "$MOSDNS_URL" ] && [ "$MOSDNS_URL" != "null" ]; then
-    MOSDNS_ASSET=$(basename "$MOSDNS_URL")
-    curl -fL "$MOSDNS_URL" -o "$TMP_DIR/$MOSDNS_ASSET"
-    unzip -q "$TMP_DIR/$MOSDNS_ASSET" -d "$TMP_DIR/mosdns-bin"
-    MOSDNS_BIN=$(find "$TMP_DIR/mosdns-bin" -type f -name mosdns | head -n 1)
-    if [ -n "$MOSDNS_BIN" ] && [ -f "$MOSDNS_BIN" ]; then
-        install -m 0755 "$MOSDNS_BIN" ./files/usr/bin/mosdns
-        echo "[inject] mosdns binary injected: $MOSDNS_ASSET"
-    else
-        echo "[inject] WARNING: mosdns binary not found in archive"
-    fi
-else
-    echo "[inject] WARNING: mosdns release not found for $RELEASE_ARCH"
-fi
-
-# ============ mosdns 配置 (yyysuo/firetv) ============
-echo "[inject] Downloading mosdns config..."
-
-MOSDNS_CFG_URL="https://raw.githubusercontent.com/yyysuo/firetv/refs/heads/master/mosdnsconfigupdate/mosdns20251225allup.zip"
-if curl -fL "$MOSDNS_CFG_URL" -o "$TMP_DIR/mosdns-config.zip"; then
-    find ./files/etc/mosdns -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-    unzip -q -o "$TMP_DIR/mosdns-config.zip" -d ./files/etc/mosdns
-    echo "[inject] mosdns config extracted from firetv/mosdns20251225allup.zip"
-else
-    echo "[inject] WARNING: mosdns config download failed, /etc/mosdns will be empty"
-fi
-
-# ============ mosdns init 脚本 ============
-echo "[inject] Downloading mosdns init script..."
-
-if curl -fsSL "https://raw.githubusercontent.com/yyysuo/mosdns/main/scripts/openwrt/mosdns-init-openwrt" -o "$TMP_DIR/mosdns.init"; then
-    # 该脚本默认 CONF=./config.yaml，yyysuo 的 firetv 配置包入口是 config_custom.yaml
-    sed -i 's#^CONF=\./config\.yaml#CONF=./config_custom.yaml#' "$TMP_DIR/mosdns.init"
-    install -m 0755 "$TMP_DIR/mosdns.init" ./files/etc/init.d/mosdns
-    echo "[inject] mosdns init script installed"
-else
-    echo "[inject] WARNING: mosdns init download failed"
-fi
-
 # ============ 验证 ============
 echo "[inject] Verification:"
 [ -f ./files/usr/bin/sing-box ] && file ./files/usr/bin/sing-box
-[ -f ./files/usr/bin/mosdns ]   && file ./files/usr/bin/mosdns
 [ -f ./files/etc/init.d/sing-box ] && echo "init.d/sing-box: present (from repo files/)"
 [ -f ./files/etc/sing-box/config.json ] && echo "sing-box/config.json: present (from repo files/)"
 [ -f ./files/etc/nftables.d/40-singbox-tproxy.nft ] && echo "nftables.d/40-singbox-tproxy.nft: present"
