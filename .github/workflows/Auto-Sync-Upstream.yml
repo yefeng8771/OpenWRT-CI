@@ -161,5 +161,7 @@ jobs:
             echo "- Upstream SHA: ${{ steps.cmp.outputs.upstream_sha }}"
             echo "- ahead/behind: ${{ steps.cmp.outputs.ahead }} / ${{ steps.cmp.outputs.behind }}"
             echo "- Merge result: ${{ steps.merge.outputs.result }}"
-            [ -n "${{ steps.merge.outputs.merge_sha }}" ] && echo "- Merge commit: ${{ steps.merge.outputs.merge_sha }}"
+            if [ -n "${{ steps.merge.outputs.merge_sha }}" ]; then
+              echo "- Merge commit: ${{ steps.merge.outputs.merge_sha }}"
+            fi
           } >> $GITHUB_STEP_SUMMARY
