@@ -40,7 +40,7 @@ jobs:
       - name: Compare with upstream
         id: cmp
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           INFO=$(gh api "repos/${{ github.repository }}/compare/${UPSTREAM_OWNER}:${UPSTREAM_BRANCH}...${{ github.repository_owner }}:main")
           AHEAD=$(echo "$INFO" | jq -r '.ahead_by')
@@ -58,7 +58,7 @@ jobs:
       - name: Create temp ref pointing to upstream HEAD
         if: steps.cmp.outputs.behind != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${TEMP_BRANCH}" 2>/dev/null || true
           gh api -X POST   "repos/${{ github.repository }}/git/refs" \
@@ -70,7 +70,7 @@ jobs:
         id: merge
         if: steps.cmp.outputs.behind != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set +e
           RESPONSE=$(gh api -X POST "repos/${{ github.repository }}/merges" \
@@ -99,7 +99,7 @@ jobs:
       - name: Open issue on conflict
         if: steps.merge.outputs.result == 'conflict'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
           UPSTREAM_SHA: ${{ steps.cmp.outputs.upstream_sha }}
           AHEAD: ${{ steps.cmp.outputs.ahead }}
           BEHIND: ${{ steps.cmp.outputs.behind }}
@@ -129,14 +129,14 @@ jobs:
       - name: Cleanup temp ref
         if: always() && steps.cmp.outputs.behind != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${TEMP_BRANCH}" 2>/dev/null || true
 
       - name: Disable upstream's auto-trigger workflows
         if: steps.merge.outputs.result == 'success'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           # 这些是上游自带、会在 Auto-Clean 完成时自动跑全设备矩阵的工作流，
           # 我们用 QWRT.yml 接管，所以同步成功后强制 disable（幂等）。
@@ -147,7 +147,7 @@ jobs:
       - name: Trigger QWRT build
         if: steps.merge.outputs.result == 'success'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           gh workflow run QWRT.yml --repo ${{ github.repository }}
           echo "QWRT build triggered"
@@ -161,5 +161,7 @@ jobs:
             echo "- Upstream SHA: ${{ steps.cmp.outputs.upstream_sha }}"
             echo "- ahead/behind: ${{ steps.cmp.outputs.ahead }} / ${{ steps.cmp.outputs.behind }}"
             echo "- Merge result: ${{ steps.merge.outputs.result }}"
-            [ -n "${{ steps.merge.outputs.merge_sha }}" ] && echo "- Merge commit: ${{ steps.merge.outputs.merge_sha }}"
+            if [ -n "${{ steps.merge.outputs.merge_sha }}" ]; then
+              echo "- Merge commit: ${{ steps.merge.outputs.merge_sha }}"
+            fi
           } >> $GITHUB_STEP_SUMMARY
