@@ -89,12 +89,26 @@ jobs:
         run: |
           sudo -E apt -yqq update
           sudo -E apt -yqq install bc dos2unix python3-netifaces libfuse-dev
-          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          dos2unix "$GITHUB_WORKSPACE/Scripts/init_build_environment.sh"
+          sudo bash "$GITHUB_WORKSPACE/Scripts/init_build_environment.sh"
+          sudo -E systemctl daemon-reload
           sudo -E timedatectl set-timezone "Asia/Shanghai"
+          if command -v go >/dev/null 2>&1; then
+            echo "GO_INSTALLED=true" >> "$GITHUB_ENV"
+          else
+            echo "GO_INSTALLED=false" >> "$GITHUB_ENV"
+          fi
       #          sudo chown $USER:$GROUPS $GITHUB_WORKSPACE
       #          sudo mkdir -p /mnt/build_wrt
       #          sudo chown $USER:$USER /mnt/build_wrt
       #          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+
+      - name: Setup Go
+        if: env.GO_INSTALLED != 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - run: go version
 
       - name: Initialization Values
         run: |
@@ -128,6 +142,7 @@ jobs:
             ./wrt/staging_dir
           key: ${{ env.WRT_ARCH }}-${{ hashFiles('repo_flag', 'Config/**', 'Scripts/**', 'Patches/**', 'files/**', '.github/workflows/WRT-CORE.yml', '.github/workflows/QWRT.yml') }}
           restore-keys: |
+            ${{ env.WRT_ARCH }}-${{ hashFiles('**/repo_flag') }}-
             ${{ env.WRT_ARCH }}-
 
       - name: Refresh the cache
