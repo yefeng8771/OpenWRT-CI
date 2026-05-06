@@ -126,18 +126,18 @@ jobs:
           fi
 
       - name: Disable upstream's auto-trigger workflows
-        if: steps.merge.outputs.result == 'success'
+        if: steps.cmp.outputs.behind == '0' || steps.merge.outputs.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
           # 这些是上游自带、会在 Auto-Clean 完成时自动跑全设备矩阵的工作流，
-          # 我们用 QWRT.yml 接管，所以同步成功后强制 disable（幂等）。
+          # 我们用 QWRT.yml 接管，所以同步成功或已与上游同步时都强制 disable（幂等）。
           for wf in QCA-6.12-VIKINGYFY.yml QCA-6.12-LiBwrt.yml WRT-CORE-TEST.yml; do
             gh workflow disable "$wf" --repo ${{ github.repository }} 2>/dev/null || true
           done
 
       - name: Trigger QWRT build
-        if: steps.merge.outputs.result == 'success'
+        if: steps.cmp.outputs.behind == '0' || steps.merge.outputs.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
