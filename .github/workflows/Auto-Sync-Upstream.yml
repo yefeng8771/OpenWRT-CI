@@ -1,7 +1,7 @@
 # 自动同步上游 davidtall/OpenWRT-CI 到 main 并触发 QWRT 编译
 #
-# 设计：用 GitHub Merges API（POST /repos/X/Y/merges）创建一个真正的合并提交，
-# 而不是 force-reset。这样我们的自定义文件（Patches/、Config/CUSTOM.txt、
+# 设计：用 GitHub 官方 fork 同步接口（POST /repos/{owner}/{repo}/merge-upstream）
+# 把上游变更同步进当前 fork 的 main，而不是 force-reset。这样我们的自定义文件（Patches/、Config/CUSTOM.txt、
 # .github/workflows/QWRT.yml、.github/workflows/Auto-Sync-Upstream.yml、files/、docs/）
 # 不会被擦除。
 #
@@ -106,15 +106,23 @@ jobs:
             envsubst < /tmp/issue.md > /tmp/issue.final.md
           echo "" >> /tmp/issue.final.md
           echo "ahead=${AHEAD}, behind=${BEHIND}, upstream_sha=${UPSTREAM_SHA}" >> /tmp/issue.final.md
-          if gh label list --repo ${{ github.repository }} --limit 200 | awk '{print $1}' | grep -qx "auto-sync-conflict"; then
-            gh issue create \
-              --title "Auto-Sync: merge conflict with upstream@${UPSTREAM_SHA}" \
-              --body-file /tmp/issue.final.md \
-              --label "auto-sync-conflict" || true
+          title="Auto-Sync: merge conflict with upstream@${UPSTREAM_SHA}"
+          if [ "$(gh api repos/${{ github.repository }} --jq '.has_issues')" != "true" ]; then
+            echo "Repository issues are disabled; skip conflict issue creation"
           else
-            gh issue create \
-              --title "Auto-Sync: merge conflict with upstream@${UPSTREAM_SHA}" \
-              --body-file /tmp/issue.final.md || true
+            existing=$(gh issue list --repo ${{ github.repository }} --state open --search "$title in:title" --json number --jq '.[0].number // empty' 2>/dev/null || true)
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue.final.md || true
+            elif gh label list --repo ${{ github.repository }} --limit 200 2>/dev/null | awk '{print $1}' | grep -qx "auto-sync-conflict"; then
+              gh issue create \
+                --title "$title" \
+                --body-file /tmp/issue.final.md \
+                --label "auto-sync-conflict" || true
+            else
+              gh issue create \
+                --title "$title" \
+                --body-file /tmp/issue.final.md || true
+            fi
           fi
 
       - name: Disable upstream's auto-trigger workflows
