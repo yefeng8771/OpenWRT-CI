@@ -37,4 +37,12 @@ UPDATE_PACKAGE() {
 UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
+# Syncthing: core follows OpenWrt packages master; LuCI uses active preview-compatible fork.
+UPDATE_PACKAGE "syncthing" "openwrt/packages" "master" "pkg"
+UPDATE_PACKAGE "luci-app-syncthing" "danchexiaoyang/luci-app-syncthing" "main" "name"
+
+# 删除明确不需要的官方/第三方插件，避免被 feeds 或上游重新带入。
+rm -rf ../feeds/luci/applications/luci-app-{passwall*,mosdns,dockerman,dae*,daed*,nikki,zerotier,tailscale,bypass*} 2>/dev/null || true
+rm -rf ../feeds/packages/net/{v2ray-geodata,dae*,daed*,mosdns,nikki,zerotier,tailscale} 2>/dev/null || true
+
 echo "[packages] Minimal package sync done"

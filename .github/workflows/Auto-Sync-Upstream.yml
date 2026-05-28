@@ -1,4 +1,4 @@
-# 自动同步上游 davidtall/OpenWRT-CI 到 main 并触发 QWRT 编译
+# 自动同步上游 davidtall/DaeWRT-CI 到 main 并触发定制 re-cs-02 编译
 #
 # 设计：用 GitHub 官方 fork 同步接口（POST /repos/{owner}/{repo}/merge-upstream）
 # 把上游变更同步进当前 fork 的 main，而不是 force-reset。这样我们的自定义文件（Patches/、Config/CUSTOM.txt、
@@ -11,8 +11,8 @@
 #   3. 调用 GitHub 官方 fork 同步接口 POST /repos/{owner}/{repo}/merge-upstream 同步 main
 #      - 成功：上游变更合并进 main
 #      - 409：冲突，开 issue，跳过本次
-#   4. 关闭上游自带的自动触发工作流（避免跑非 QWRT 矩阵）
-#   5. 触发 QWRT.yml
+#   4. 关闭上游自带的自动触发工作流（避免跑非定制矩阵）
+#   5. 触发 QCA-6.12-VIKINGYFY.yml
 name: Auto-Sync-Upstream
 
 on:
@@ -27,7 +27,7 @@ permissions:
 
 env:
   UPSTREAM_OWNER: davidtall
-  UPSTREAM_REPO: OpenWRT-CI
+  UPSTREAM_REPO: DaeWRT-CI
   UPSTREAM_BRANCH: main
 
 jobs:
@@ -141,7 +141,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run QWRT.yml --repo ${{ github.repository }}
+          gh workflow run QCA-6.12-VIKINGYFY.yml --repo ${{ github.repository }} -f PACKAGE=false -f TEST=false
           echo "QWRT build triggered"
 
       - name: Summary

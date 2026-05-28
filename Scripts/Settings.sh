@@ -17,8 +17,71 @@ if [ -f "$WIFI_SH" ]; then
 	#修改WIFI密码
 	sed -i "s/BASE_WORD='.*'/BASE_WORD='$WRT_WORD'/g" $WIFI_SH
 elif [ -f "$WIFI_UC" ]; then
-	#修改WIFI名称
-	sed -i "s/ssid='.*'/ssid='$WRT_SSID'/g" $WIFI_UC
+	# 修改WIFI默认名称：re-cs-02 三频不假定 6G，按带宽排序，最大带宽为 QWRT6
+	python3 - "$WIFI_UC" <<'PY'
+from pathlib import Path
+import sys
+
+p = Path(sys.argv[1])
+text = p.read_text()
+if 'let ssid_candidates = [];' not in text:
+    text = text.replace(
+        'let config = uci.cursor().get_all("wireless") ?? {};\n\nfunction radio_exists(path, macaddr, phy, radio) {',
+        '''let config = uci.cursor().get_all("wireless") ?? {};
+let ssid_candidates = [];
+let ssid_by_key = {};
+
+function record_ssid_candidate(phy_name, radio_index, width, band_name) {
+\tpush(ssid_candidates, [ sprintf('%s:%s', phy_name, radio_index), width, band_name ]);
+}
+
+function assign_ssids_by_bandwidth() {
+\tssid_candidates = sort(ssid_candidates, (a, b) => b[1] - a[1]);
+\tfor (let i = 0; i < length(ssid_candidates); i++)
+\t\tssid_by_key[ssid_candidates[i][0]] = i == 0 ? 'QWRT6' : sprintf('QWRT%d', i + 1);
+}
+
+function radio_exists(path, macaddr, phy, radio) {''',
+        1,
+    )
+    text = text.replace(
+        '''for (let phy_name, phy in board.wlan) {
+\tlet info = phy.info;
+''',
+        '''for (let phy_name, phy in board.wlan) {
+\tlet info = phy.info;
+\tif (!info || !length(info.bands))
+\t\tcontinue;
+
+\tlet radios = length(info.radios) > 0 ? info.radios : [{ bands: info.bands }];
+\tfor (let radio in radios) {
+\t\tlet band_name = filter(bands_order, (b) => radio.bands[b])[0];
+\t\tif (!band_name)
+\t\t\tcontinue;
+\t\tlet band = info.bands[band_name];
+\t\tlet width = band.max_width;
+\t\tif (band_name == "2G")
+\t\t\twidth = 20;
+\t\telse if (width > 80)
+\t\t\twidth = 80;
+\t\trecord_ssid_candidate(phy_name, radio.index, width, band_name);
+\t}
+}
+assign_ssids_by_bandwidth();
+
+for (let phy_name, phy in board.wlan) {
+\tlet info = phy.info;
+''',
+        1,
+    )
+text = text.replace(
+    '''set ${si}.ssid='${defaults?.ssid || "ImmortalWRT"}'\n''',
+    '''set ${si}.ssid='${defaults?.ssid || ssid_by_key[sprintf('%s:%s', phy_name, radio.index)] || "ImmortalWRT"}'\n''',
+    1,
+)
+p.write_text(text)
+PY
+	grep -q 'ssid_by_key\|QWRT6' "$WIFI_UC" || { echo "mac80211.uc WIFI SSID bandwidth patch failed" >&2; exit 1; }
 	#修改WIFI密码
 	sed -i "s/key='.*'/key='$WRT_WORD'/g" $WIFI_UC
 	#修改WIFI地区
