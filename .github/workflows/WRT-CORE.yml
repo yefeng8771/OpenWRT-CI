@@ -233,50 +233,139 @@ jobs:
 
       - name: Package Firmware
         run: |
-          cd ./wrt/ && mkdir ./upload/
+          cd ./wrt/ && mkdir -p ./upload/
 
           cp -f ./.config ./upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
 
-          if [[ $WRT_TEST != 'true' ]]; then
-            echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV
-            echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> $GITHUB_ENV
+          join_or_none() {
+            if [ -n "${1:-}" ]; then
+              printf '%s\n' "$1"
+            else
+              printf '无\n'
+            fi
+          }
 
-            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +  
+          extract_config_packages() {
+            local mode="$1"
+            local files=()
+            for f in \
+              "$GITHUB_WORKSPACE/Config/GENERAL.txt" \
+              "$GITHUB_WORKSPACE/Config/CUSTOM.txt" \
+              "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt"; do
+              [ -f "$f" ] && files+=("$f")
+            done
+            [ "${#files[@]}" -gt 0 ] || return 0
+
+            awk -v mode="$mode" '
+              /^[[:space:]]*#/ && $0 !~ /^# CONFIG_PACKAGE_[A-Za-z0-9_+-]+ is not set/ { next }
+              mode == "add" && /^CONFIG_PACKAGE_[A-Za-z0-9_+-]+=[ym]$/ {
+                name=$1; sub(/^CONFIG_PACKAGE_/, "", name); sub(/=[ym]$/, "", name); print name
+              }
+              mode == "remove" && /^CONFIG_PACKAGE_[A-Za-z0-9_+-]+=n$/ {
+                name=$1; sub(/^CONFIG_PACKAGE_/, "", name); sub(/=n$/, "", name); print name
+              }
+              mode == "remove" && /^# CONFIG_PACKAGE_[A-Za-z0-9_+-]+ is not set$/ {
+                name=$2; sub(/^CONFIG_PACKAGE_/, "", name); print name
+              }
+            ' "${files[@]}"
+          }
+
+          extract_injected_packages() {
+            local script="$GITHUB_WORKSPACE/Scripts/Packages.sh"
+            [ -f "$script" ] || return 0
+
+            awk '
+              /^[[:space:]]*UPDATE_PACKAGE[[:space:]]+"/ {
+                line=$0
+                count=0
+                while (match(line, /"[^"]+"/)) {
+                  args[++count]=substr(line, RSTART + 1, RLENGTH - 2)
+                  line=substr(line, RSTART + RLENGTH)
+                }
+                if (count < 2) { next }
+
+                pkg=args[1]
+                repo=args[2]
+                repo_name=repo
+                sub(/^.*\//, "", repo_name)
+                if (repo_name ~ /^luci-(app|theme)-/) {
+                  print repo_name
+                } else {
+                  print pkg
+                }
+
+                for (i=5; i<=count; i++) {
+                  if (args[i] != "") { print args[i] }
+                }
+                delete args
+              }
+            ' "$script"
+          }
+
+          WRT_REMOVED_PACKAGES="$(extract_config_packages remove | sort -u | paste -sd ' ' -)"
+          WRT_ADDED_PACKAGES="$( { extract_config_packages add; extract_injected_packages; } | sort -u | paste -sd ' ' -)"
+
+          if [[ $WRT_TEST != 'true' ]]; then
+            mapfile -t MANIFESTS < <(find ./bin/targets/ -type f -name "*.manifest" | sort)
+            if [ "${#MANIFESTS[@]}" -gt 0 ]; then
+              WRT_KVER_VALUE="$(awk '$1 == "kernel" && $2 == "-" { print $3 }' "${MANIFESTS[@]}" | sort -u | paste -sd ' ' -)"
+              WRT_LIST_VALUE="$(awk '$1 ~ /^luci-(app|theme)/ { print $1 }' "${MANIFESTS[@]}" | sort -u | paste -sd ' ' -)"
+              WRT_FINAL_PACKAGES_VALUE="$(awk 'NF { print $1 }' "${MANIFESTS[@]}" | sort -u | paste -sd ' ' -)"
+            else
+              WRT_KVER_VALUE="未找到 manifest"
+              WRT_LIST_VALUE="未找到 manifest"
+              WRT_FINAL_PACKAGES_VALUE="未找到 manifest"
+            fi
+
+            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
 
             for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
-              EXT=$(basename $FILE | cut -d '.' -f 2-)
-              NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
+              EXT=$(basename "$FILE" | cut -d '.' -f 2-)
+              NAME=$(basename "$FILE" | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
               NEW_FILE="$NAME"-"$WRT_DATE"."$EXT"
-              mv -f $FILE ./upload/$NEW_FILE
+              mv -f "$FILE" ./upload/"$NEW_FILE"
             done
 
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
+          else
+            WRT_KVER_VALUE="测试模式未编译，未生成固件 manifest"
+            WRT_LIST_VALUE="测试模式未编译，未生成固件 manifest"
+            WRT_FINAL_PACKAGES_VALUE="测试模式未编译，未生成固件 manifest"
           fi
+
+          cat > ./release-body.md <<EOF
+          这是个平台固件包，内含多个设备！
+          请注意选择你需要的设备固件！
+          不要问，刷就完事了！
+
+          全系带开源硬件加速，别问了！
+
+          源码：${WRT_REPO}
+          分支：${WRT_BRANCH}
+          提交：${WRT_HASH}
+
+          配置：${WRT_CONFIG}
+          平台：${WRT_TARGET}
+
+          登录地址：${WRT_IP}
+          登录密码：${WRT_PW}
+
+          WIFI名称：${WRT_SSID}
+          WIFI密码：${WRT_WORD}
+
+          内核版本：${WRT_KVER_VALUE}
+          插件列表：${WRT_LIST_VALUE}
+
+          去除的包：$(join_or_none "$WRT_REMOVED_PACKAGES")
+
+          增加的包：$(join_or_none "$WRT_ADDED_PACKAGES")
+
+          最终的包：$(join_or_none "$WRT_FINAL_PACKAGES_VALUE")
+          EOF
 
       - name: Release Firmware
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{env.CI_NAME}}-${{env.WRT_CONFIG}}_${{env.WRT_DATE}}
           files: ./wrt/upload/*.*
-          body: |
-            这是个平台固件包，内含多个设备！
-            请注意选择你需要的设备固件！
-            不要问，刷就完事了！
-
-            全系带开源硬件加速，别问了！
-
-            源码：${{env.WRT_REPO}}
-            分支：${{env.WRT_BRANCH}}
-            提交：${{env.WRT_HASH}}
-
-            配置：${{env.WRT_CONFIG}}
-            平台：${{env.WRT_TARGET}}
-
-            登录地址：${{env.WRT_IP}}
-            登录密码：${{env.WRT_PW}}
-
-            WIFI名称：${{env.WRT_SSID}}
-            WIFI密码：${{env.WRT_WORD}}
-
-            内核版本：${{env.WRT_KVER}}
-            插件列表：${{env.WRT_LIST}}
+          body_path: ./wrt/release-body.md
