@@ -2,7 +2,7 @@
 #   - 仅编译 jdcloud_re-cs-02 (京东云亚瑟) WiFi 版本
 #   - 静态指定品牌参数（QWRT / 172.16.3.1）
 #   - 不依赖 brand.sh 在运行时修改 yml，
-#     这样上游同步时即便 QCA-6.12-VIKINGYFY.yml 被覆盖也不影响我们的产物
+#     这样上游同步时即便上游 QCA workflow 被覆盖也不影响我们的产物
 name: QWRT
 
 on:

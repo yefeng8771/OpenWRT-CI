@@ -12,7 +12,7 @@
 #      - 成功：上游变更合并进 main
 #      - 409：冲突，开 issue，跳过本次
 #   4. 关闭上游自带的自动触发工作流（避免跑非定制矩阵）
-#   5. 触发 QCA-6.18-VIKINGYFY.yml
+#   5. 触发 QWRT.yml（专用 re-cs-02 定制固件）
 name: Auto-Sync-Upstream
 
 on:
@@ -141,8 +141,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.AUTOSYNC_PAT != '' && secrets.AUTOSYNC_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run QCA-6.18-VIKINGYFY.yml --repo ${{ github.repository }} -f TEST=false
-          echo "QCA-6.18-VIKINGYFY build triggered"
+          gh workflow run QWRT.yml --repo ${{ github.repository }} -f TEST=false
+          echo "QWRT build triggered"
 
       - name: Summary
         if: always()
