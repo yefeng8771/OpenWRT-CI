@@ -41,6 +41,20 @@ UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
 # Syncthing: keep core package aligned with OpenWrt 24.10 to avoid master-only Go/package changes.
 UPDATE_PACKAGE "syncthing" "openwrt/packages" "openwrt-24.10" "pkg"
+if [ -f "syncthing/Makefile" ]; then
+	python3 - <<'PY'
+from pathlib import Path
+p = Path('syncthing/Makefile')
+text = p.read_text()
+old = 'include ../../lang/golang/golang-package.mk'
+new = 'include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk'
+if old in text:
+    p.write_text(text.replace(old, new, 1))
+    print('[packages] Patched syncthing golang include path')
+else:
+    print('[packages] syncthing golang include path already patched or not found')
+PY
+fi
 UPDATE_PACKAGE "luci-app-syncthing" "danchexiaoyang/luci-app-syncthing" "main" "name"
 
 # 删除明确不需要的官方/第三方插件，避免被 feeds 或上游重新带入。
