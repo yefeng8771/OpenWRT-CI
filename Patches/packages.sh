@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # packages.sh — 软件包增删补丁
 WORKSPACE="${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")/.." && pwd)}"
 PKG_DIR="${WORKSPACE}/${WRT_DIR:-wrt}/package"
@@ -27,6 +28,36 @@ for pkg in "${REMOVE_PACKAGES[@]}"; do
         echo "$FOUND" | while read -r dir; do rm -rf "$dir"; echo "[packages] Removed: $dir"; done
     fi
 done
+
+# 修复上游 samba4-libs 漏声明 ICU 运行库依赖：
+# 当前 QWRT feeds 的 samba4 4.22.7 会安装链接 libicui18n/libicuuc 的 .so，
+# 但 Makefile 没有把 libicu 写入 DEPENDS，导致 APK 打包时报
+# "Package samba4-libs is missing dependencies"。
+SAMBA4_MAKEFILE="${WORKSPACE}/${WRT_DIR:-wrt}/feeds/packages/net/samba4/Makefile"
+if [ -f "$SAMBA4_MAKEFILE" ]; then
+    if ! grep -q '+libicu' "$SAMBA4_MAKEFILE"; then
+        python3 - "$SAMBA4_MAKEFILE" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+lines = path.read_text().splitlines(keepends=True)
+if any('+libicu' in line for line in lines):
+    raise SystemExit(0)
+for idx, line in enumerate(lines):
+    if '+libuuid' in line:
+        newline = '\n' if line.endswith('\n') else ''
+        lines.insert(idx + 1, '\t+libicu \\' + newline)
+        path.write_text(''.join(lines))
+        break
+else:
+    raise SystemExit(f"libuuid dependency marker not found in {path}")
+PY
+        echo "[packages] Patched samba4-libs dependency: +libicu"
+    else
+        echo "[packages] samba4-libs already depends on libicu"
+    fi
+else
+    echo "[packages] WARNING: samba4 Makefile not found: $SAMBA4_MAKEFILE"
+fi
 
 # 新增插件
 if [ ! -d "natmapt" ]; then

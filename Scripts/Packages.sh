@@ -39,8 +39,8 @@ UPDATE_PACKAGE() {
 UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
-# Syncthing: core follows OpenWrt packages master; LuCI uses active preview-compatible fork.
-UPDATE_PACKAGE "syncthing" "openwrt/packages" "master" "pkg"
+# Syncthing: keep core package aligned with OpenWrt 24.10 to avoid master-only Go/package changes.
+UPDATE_PACKAGE "syncthing" "openwrt/packages" "openwrt-24.10" "pkg"
 UPDATE_PACKAGE "luci-app-syncthing" "danchexiaoyang/luci-app-syncthing" "main" "name"
 
 # 删除明确不需要的官方/第三方插件，避免被 feeds 或上游重新带入。
