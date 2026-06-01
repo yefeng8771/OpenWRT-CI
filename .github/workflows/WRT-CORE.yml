@@ -305,6 +305,18 @@ jobs:
           WRT_REMOVED_PACKAGES="$(extract_config_packages remove | sort -u | paste -sd ' ' -)"
           WRT_ADDED_PACKAGES="$( { extract_config_packages add; extract_injected_packages; } | sort -u | paste -sd ' ' -)"
 
+          WRT_FEATURES_VALUE="$(cat <<'FEATURES'
+- 基于 VIKINGYFY/immortalwrt main，上游源码与 QCA/NSS 硬件加速栈。
+- 保留 WiFi 版无线栈；NOWIFI 配置会显式移除 ath11k/wpad/wifi-scripts 等无线组件。
+- LuCI 主题使用 luci-theme-argon。
+- 集成 EasyTier LuCI，并在补丁阶段跟随 EasyTier 最新 prerelease。
+- 集成 Syncthing 与 luci-app-syncthing，Syncthing 源码固定同步 OpenWrt 24.10 并修正 Go include 路径。
+- 注入 reF1nd sing-box prerelease 裸核到 /usr/bin/sing-box，附带 init.d、默认配置和 nftables TProxy 规则。
+- 保留 Samba4、SQM、UPnP、TTYD、TinyFileManager、natmapt、cpufreq、autoreboot、package-manager 等常用管理功能。
+- 移除 passwall/homeproxy/openclash/nikki/dae/daed/mosdns/tailscale/zerotier/dockerman 等重复或非目标方案。
+FEATURES
+          )"
+
           if [[ $WRT_TEST != 'true' ]]; then
             mapfile -t MANIFESTS < <(find ./bin/targets/ -type f -name "*.manifest" | sort)
             if [ "${#MANIFESTS[@]}" -gt 0 ]; then
@@ -354,13 +366,14 @@ jobs:
           WIFI密码：${WRT_WORD}
 
           内核版本：${WRT_KVER_VALUE}
-          插件列表：${WRT_LIST_VALUE}
+          特色与上游变更：
+          ${WRT_FEATURES_VALUE}
 
-          去除的包：$(join_or_none "$WRT_REMOVED_PACKAGES")
+          自定义/同步的包：$(join_or_none "$WRT_ADDED_PACKAGES")
 
-          增加的包：$(join_or_none "$WRT_ADDED_PACKAGES")
+          重点移除的包：$(join_or_none "$WRT_REMOVED_PACKAGES")
 
-          最终的包：$(join_or_none "$WRT_FINAL_PACKAGES_VALUE")
+          完整包清单已随 Release 上传为 manifest 文件。
           EOF
 
       - name: Release Firmware
