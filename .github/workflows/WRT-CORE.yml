@@ -310,7 +310,7 @@ jobs:
 - 保留 WiFi 版无线栈；NOWIFI 配置会显式移除 ath11k/wpad/wifi-scripts 等无线组件。
 - LuCI 主题使用 luci-theme-argon。
 - 集成 EasyTier LuCI，并在补丁阶段跟随 EasyTier 最新 prerelease。
-- 集成 Syncthing 与 luci-app-syncthing，Syncthing 源码固定同步 OpenWrt 24.10 并修正 Go include 路径。
+- 集成 Syncthing 与 luci-app-syncthing，Syncthing 源码同步 OpenWrt packages 25.12 并修正 Go include 路径。
 - 注入 reF1nd sing-box prerelease 裸核到 /usr/bin/sing-box，附带 init.d、默认配置和 nftables TProxy 规则。
 - 保留 Samba4、SQM、UPnP、TTYD、TinyFileManager、natmapt、cpufreq、autoreboot、package-manager 等常用管理功能。
 - 移除 passwall/homeproxy/openclash/nikki/dae/daed/mosdns/tailscale/zerotier/dockerman 等重复或非目标方案。

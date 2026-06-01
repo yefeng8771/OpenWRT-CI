@@ -39,8 +39,8 @@ UPDATE_PACKAGE() {
 UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
 
-# Syncthing: keep core package aligned with OpenWrt 24.10 to avoid master-only Go/package changes.
-UPDATE_PACKAGE "syncthing" "openwrt/packages" "openwrt-24.10" "pkg"
+# Syncthing: keep core package aligned with current OpenWrt packages branch for newer upstream version.
+UPDATE_PACKAGE "syncthing" "openwrt/packages" "openwrt-25.12" "pkg"
 if [ -f "syncthing/Makefile" ]; then
 	python3 - <<'PY'
 from pathlib import Path
