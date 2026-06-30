@@ -38,6 +38,7 @@ UPDATE_PACKAGE() {
 
 UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
+UPDATE_PACKAGE "luci-app-daed" "QiuSimons/luci-app-daed" "kix"
 
 # Syncthing: keep core package aligned with current OpenWrt packages branch for newer upstream version.
 UPDATE_PACKAGE "syncthing" "openwrt/packages" "openwrt-25.12" "pkg"
@@ -57,8 +58,16 @@ PY
 fi
 UPDATE_PACKAGE "luci-app-syncthing" "danchexiaoyang/luci-app-syncthing" "main" "name"
 
+#修复daed/Makefile
+#rm -rf luci-app-daed/daed/Makefile && cp -r $GITHUB_WORKSPACE/patches/daed/Makefile luci-app-daed/daed/
+sed -i 's/pnpm install ; \\/pnpm install --no-frozen-lockfile ; \\/g' luci-app-daed/daed/Makefile
+sed -i 's|github.com/daeuniverse/quic-go|github.com/olicesx/quic-go|g' luci-app-daed/daed/Makefile
+
+sed -i 's|/run/i\\  procd_set_param|/procd_set_param command/i \\\tprocd_set_param|g' luci-app-daed/luci-app-daed/root/etc/init.d/luci_daed
+#cat luci-app-daed/daed/Makefile
+
 # 删除明确不需要的官方/第三方插件，避免被 feeds 或上游重新带入。
-rm -rf ../feeds/luci/applications/luci-app-{passwall*,mosdns,dockerman,dae*,daed*,nikki,zerotier,tailscale,bypass*} 2>/dev/null || true
-rm -rf ../feeds/packages/net/{v2ray-geodata,dae*,daed*,mosdns,nikki,zerotier,tailscale} 2>/dev/null || true
+rm -rf ../feeds/luci/applications/luci-app-{passwall*,mosdns,dockerman,dae*,nikki,zerotier,tailscale,bypass*} 2>/dev/null || true
+rm -rf ../feeds/packages/net/{v2ray-geodata,dae*,mosdns,nikki,zerotier,tailscale} 2>/dev/null || true
 
 echo "[packages] Minimal package sync done"
