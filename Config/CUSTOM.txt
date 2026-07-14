@@ -20,6 +20,11 @@ CONFIG_PACKAGE_luci-app-tinyfilemanager=y
 CONFIG_PACKAGE_luci-app-natmapt=y
 CONFIG_PACKAGE_luci-app-easytier=y
 
+# ============ EasyTier 核心 ============
+# luci-app-easytier 仅依赖 kmod-tun/luci-compat，不自动拉 easytier 二进制包。
+# 必须显式启用，否则固件只有 LuCI/配置，没有 /usr/bin/easytier-core。
+CONFIG_PACKAGE_easytier=y
+
 # ============ 裸核 sing-box ============
 # sing-box 二进制由 Patches/inject-binaries.sh 从 reF1nd/sing-box-releases
 # 注入到 /usr/bin/sing-box，因此上游 feed 中的源码包不要编译。
