@@ -41,3 +41,7 @@ CONFIG_ATH11K_MEM_PROFILE_512M=y
 
 CONFIG_PACKAGE_sqm-scripts-nss=y
 CONFIG_PACKAGE_kmod-qca-nss-crypto=y
+
+#eBPF TC 支持（sing-box shared_network / dae 需要 cls_bpf + act_bpf）
+CONFIG_PACKAGE_kmod-sched-bpf=y
+CONFIG_PACKAGE_kmod-sched-core=y
