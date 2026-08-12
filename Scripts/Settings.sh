@@ -99,6 +99,23 @@ sed -i "s/hostname='.*'/hostname='$WRT_NAME'/g" $CFG_FILE
 vlmcsd_patches="./feeds/packages/net/vlmcsd/patches/"
 mkdir -p $vlmcsd_patches && cp -f ../patches/001-fix_compile_with_ccache.patch $vlmcsd_patches
 
+#回退 gettext-full 到官方 0.24.2
+#上游 VIKINGYFY/immortalwrt 于 2026-08-04 升级到 GNU gettext 1.0，其 options.h
+#include <stdcountof.h>(C23/glibc2.40+ 新头)，但 Host/Bootstrap 调用 autogen.sh
+#重新生成构建系统时该头的 BUILT_SOURCES 生成规则未触发，导致编译期 stdcountof.h
+#缺失(宿主 Ubuntu24.04 glibc2.39 也无此头)。0.24.2 不引用该头且回退后 -std=gnu23
+#等 target 侧配置一致，故回退到官方 immortalwrt 验证过的 0.24.2 Makefile + patches。
+gettext_full_dir="./package/libs/gettext-full"
+if [ -d "$gettext_full_dir" ]; then
+	echo "rollback gettext-full to official 0.24.2 ..."
+	rm -rf "$gettext_full_dir/patches"
+	cp -f "$GITHUB_WORKSPACE/Patches/gettext-full-0.24.2/Makefile" "$gettext_full_dir/Makefile"
+	mkdir -p "$gettext_full_dir/patches"
+	cp -f "$GITHUB_WORKSPACE/Patches/gettext-full-0.24.2/patches/"*.patch "$gettext_full_dir/patches/"
+	echo "gettext-full rolled back to 0.24.2:"
+	grep -E '^PKG_VERSION|^PKG_HASH' "$gettext_full_dir/Makefile"
+fi
+
 sed -i 's/mirrors.vsean.net\/openwrt/mirror.nju.edu.cn\/immortalwrt/g' ./package/emortal/default-settings/files/99-default-settings-chinese
 
 #配置文件修改
