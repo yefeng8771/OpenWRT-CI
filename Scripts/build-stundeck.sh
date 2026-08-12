@@ -10,6 +10,12 @@ readonly STUNDECK_VERSION="0.1.0"
 
 WORKSPACE="${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")/.." && pwd)}"
 WRT_ROOT="${1:-${WORKSPACE}/${WRT_DIR:-wrt}}"
+[ -d "$WRT_ROOT" ] || {
+    echo "[stundeck] OpenWrt root is missing: $WRT_ROOT" >&2
+    exit 1
+}
+# Keep Go output paths stable after changing into the extracted source tree.
+WRT_ROOT="$(cd "$WRT_ROOT" && pwd)"
 PACKAGE_DIR="${WRT_ROOT}/package/stundeck"
 OUT_DIR="${WRT_ROOT}/build_dir/stundeck-prebuilt"
 CACHE_DIR="${WORKSPACE}/.cache/stundeck"
