@@ -6,6 +6,10 @@
 
 set -e
 
+# sing-box eBPF shared-network 依赖 br-lan 的 TC hook；关闭会绕过 TC 的软件/硬件流量卸载。
+uci -q set firewall.@defaults[0].flow_offloading='0'
+uci -q set firewall.@defaults[0].flow_offloading_hw='0'
+
 # sing-box：默认 disabled（用户填入真实节点后再启用）
 [ -x /etc/init.d/sing-box ] && /etc/init.d/sing-box disable
 

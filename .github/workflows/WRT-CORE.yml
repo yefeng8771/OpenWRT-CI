@@ -104,10 +104,10 @@ jobs:
       #          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
 
       - name: Setup Go
-        if: env.GO_INSTALLED != 'true'
         uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.26.x'
+          check-latest: true
       - run: go version
 
       - name: Initialization Values
@@ -197,6 +197,11 @@ jobs:
           cat $GITHUB_WORKSPACE/Config/CUSTOM.txt >> ./wrt/.config
           # defconfig 和 clean 在所有 patch 之后执行
           cd ./wrt/ && make defconfig -j$(nproc) && make clean -j$(nproc)
+
+      - name: Build StunDeck
+        if: env.WRT_TEST != 'true'
+        run: |
+          bash $GITHUB_WORKSPACE/Scripts/build-stundeck.sh ./wrt
 
       - name: Inject Prebuilt Binaries
         run: |

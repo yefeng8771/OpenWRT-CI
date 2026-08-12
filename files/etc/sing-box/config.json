@@ -33,13 +33,16 @@
       "sniff": false
     },
     {
-      "type": "tproxy",
-      "tag": "tproxy-in",
-      "listen": "::",
-      "listen_port": 7896,
-      "sniff": true,
-      "sniff_override_destination": true,
-      "domain_strategy": "prefer_ipv4"
+      "type": "ebpf",
+      "tag": "ebpf-in",
+      "dns_mode": "hijack",
+      "cgroup_enabled": false,
+      "bypass_private_address": true,
+      "shared_network": {
+        "enabled": true,
+        "include_interface": ["br-lan"],
+        "tc_priority": 1
+      }
     }
   ],
 

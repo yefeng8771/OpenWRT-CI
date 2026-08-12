@@ -59,6 +59,16 @@ else
     echo "[packages] WARNING: samba4 Makefile not found: $SAMBA4_MAKEFILE"
 fi
 
+# Install the in-repository StunDeck package template after the upstream source is cloned.
+STUNDECK_TEMPLATE="${WORKSPACE}/package/stundeck"
+if [ ! -f "${STUNDECK_TEMPLATE}/Makefile" ]; then
+    echo "[packages] StunDeck template missing: ${STUNDECK_TEMPLATE}" >&2
+    exit 1
+fi
+rm -rf "${PKG_DIR}/stundeck"
+cp -a "${STUNDECK_TEMPLATE}" "${PKG_DIR}/stundeck"
+echo "[packages] Added: stundeck"
+
 # 新增插件
 if [ ! -d "natmapt" ]; then
     git clone --depth=1 --single-branch --branch master "https://github.com/muink/openwrt-natmapt.git" natmapt-tmp

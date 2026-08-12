@@ -18,7 +18,7 @@ WORK_DIR="${1:-$WORKSPACE/wrt}"
 echo "[inject] Injecting prebuilt binaries into $WORK_DIR..."
 cd "$WORK_DIR"
 
-# 1) 先把仓库 files/ 目录整体合入（包含 sing-box init/config/nft、uci-defaults）
+# 1) 先把仓库 files/ 目录整体合入（包含 sing-box init/eBPF config、uci-defaults）
 mkdir -p ./files
 if [ -d "$WORKSPACE/files" ]; then
     cp -a "$WORKSPACE/files/." ./files/
@@ -66,27 +66,40 @@ SINGBOX_URL=$(curl -fsSL "${GH_HEADERS[@]}" \
             | .browser_download_url
         ][0]')
 
-if [ -n "$SINGBOX_URL" ] && [ "$SINGBOX_URL" != "null" ]; then
-    SINGBOX_ASSET=$(basename "$SINGBOX_URL")
-    curl -fL "$SINGBOX_URL" -o "$TMP_DIR/$SINGBOX_ASSET"
-    tar -xzf "$TMP_DIR/$SINGBOX_ASSET" -C "$TMP_DIR"
-    SINGBOX_BIN=$(find "$TMP_DIR" -type f -name sing-box | head -n 1)
-    if [ -n "$SINGBOX_BIN" ] && [ -f "$SINGBOX_BIN" ]; then
-        install -m 0755 "$SINGBOX_BIN" ./files/usr/bin/sing-box
-        echo "[inject] sing-box injected: $SINGBOX_ASSET"
-    else
-        echo "[inject] WARNING: sing-box binary not found in archive"
-    fi
-else
-    echo "[inject] WARNING: sing-box prerelease not found for $RELEASE_ARCH"
+if [ -z "$SINGBOX_URL" ] || [ "$SINGBOX_URL" = "null" ]; then
+    echo "[inject] ERROR: sing-box prerelease not found for $RELEASE_ARCH" >&2
+    exit 1
 fi
+
+SINGBOX_ASSET=$(basename "$SINGBOX_URL")
+curl -fL "$SINGBOX_URL" -o "$TMP_DIR/$SINGBOX_ASSET"
+tar -xzf "$TMP_DIR/$SINGBOX_ASSET" -C "$TMP_DIR"
+SINGBOX_BIN=$(find "$TMP_DIR" -type f -name sing-box | head -n 1)
+if [ -z "$SINGBOX_BIN" ] || [ ! -f "$SINGBOX_BIN" ]; then
+    echo "[inject] ERROR: sing-box binary not found in $SINGBOX_ASSET" >&2
+    exit 1
+fi
+
+# reF1nd eBPF is compile-time gated. Never publish a firmware whose binary silently lacks it.
+command -v go >/dev/null || { echo "[inject] ERROR: Go is required to verify sing-box build metadata" >&2; exit 1; }
+SINGBOX_BUILD_INFO=$(go version -m "$SINGBOX_BIN" 2>&1) || {
+    echo "[inject] ERROR: cannot read sing-box Go build metadata" >&2
+    exit 1
+}
+printf '%s\n' "$SINGBOX_BUILD_INFO"
+if ! printf '%s\n' "$SINGBOX_BUILD_INFO" | grep -q 'with_ebpf'; then
+    echo "[inject] ERROR: $SINGBOX_ASSET was not built with with_ebpf" >&2
+    exit 1
+fi
+
+install -m 0755 "$SINGBOX_BIN" ./files/usr/bin/sing-box
+echo "[inject] sing-box injected with verified with_ebpf: $SINGBOX_ASSET"
 
 # ============ 验证 ============
 echo "[inject] Verification:"
 [ -f ./files/usr/bin/sing-box ] && file ./files/usr/bin/sing-box
 [ -f ./files/etc/init.d/sing-box ] && echo "init.d/sing-box: present (from repo files/)"
-[ -f ./files/etc/sing-box/config.json ] && echo "sing-box/config.json: present (from repo files/)"
-[ -f ./files/etc/nftables.d/40-singbox-tproxy.nft ] && echo "nftables.d/40-singbox-tproxy.nft: present"
+[ -f ./files/etc/sing-box/config.json ] && grep -q '"type": "ebpf"' ./files/etc/sing-box/config.json && echo "sing-box/config.json: eBPF inbound enabled"
 [ -f ./files/etc/uci-defaults/99-qwrt-defaults ] && echo "uci-defaults/99-qwrt-defaults: present"
 
 echo "[inject] Done"
